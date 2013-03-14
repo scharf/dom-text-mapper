@@ -2,25 +2,42 @@
 (function() {
 
   window.DomTextMapper = (function() {
-    var CONTEXT_LEN, USE_TABLE_TEXT_WORKAROUND, USE_THEAD_TBODY_WORKAROUND;
+    var CONTEXT_LEN, USE_CAPTION_WORKAROUND, USE_EMPTY_TEXT_WORKAROUND, USE_OL_WORKAROUND, USE_TABLE_TEXT_WORKAROUND, USE_THEAD_TBODY_WORKAROUND, WHITESPACE;
 
     USE_THEAD_TBODY_WORKAROUND = true;
 
     USE_TABLE_TEXT_WORKAROUND = true;
 
+    USE_OL_WORKAROUND = true;
+
+    USE_CAPTION_WORKAROUND = true;
+
+    USE_EMPTY_TEXT_WORKAROUND = true;
+
     CONTEXT_LEN = 32;
+
+    DomTextMapper.instances = [];
+
+    DomTextMapper.changed = function(node, reason) {
+      var instance, _i, _len, _ref;
+      if (reason == null) {
+        reason = "no reason";
+      }
+      if (this.instances.length === 0) {
+        return;
+      }
+      _ref = this.instances;
+      for (_i = 0, _len = _ref.length; _i < _len; _i++) {
+        instance = _ref[_i];
+        instance.performUpdateOnNode(node);
+      }
+      return null;
+    };
 
     function DomTextMapper() {
       this.setRealRoot();
-      this.restrictToSerializable(false);
+      window.DomTextMapper.instances.push(this);
     }
-
-    DomTextMapper.prototype.restrictToSerializable = function(value) {
-      if (value == null) {
-        value = true;
-      }
-      return this.restricted = value;
-    };
 
     DomTextMapper.prototype.setRootNode = function(rootNode) {
       this.rootWin = window;
@@ -45,6 +62,10 @@
       return this.pathStartNode = this.getBody();
     };
 
+    DomTextMapper.prototype.getDefaultPath = function() {
+      return this.getPathTo(this.pathStartNode);
+    };
+
     DomTextMapper.prototype.setRealRoot = function() {
       this.rootWin = window;
       this.rootNode = document;
@@ -55,98 +76,69 @@
       return this.lastDOMChange = this.timestamp();
     };
 
-    DomTextMapper.prototype.getAllPaths = function() {
-      var cleanInfo, info, path, startTime, _ref;
-      if (this.domStableSince(this.lastCollectedPaths)) {
-        if (this.restricted) {
-          return this.cleanPaths;
-        } else {
-          return this.allPaths;
-        }
+    DomTextMapper.prototype.scan = function() {
+      var node, path, startTime, t1, t2;
+      if (this.domStableSince(this.lastScanned)) {
+        return this.path;
       }
       startTime = this.timestamp();
       this.saveSelection();
-      this.allPaths = {};
-      this.collectPathsForNode(this.pathStartNode);
+      this.path = {};
+      this.traverseSubTree(this.pathStartNode);
+      t1 = this.timestamp();
+      path = this.getPathTo(this.pathStartNode);
+      node = this.path[path].node;
+      this.collectPositions(node, path, null, 0, 0);
       this.restoreSelection();
-      this.lastCollectedPaths = this.timestamp();
-      console.log("Path traversal took " + (this.lastCollectedPaths - startTime) + " ms.");
-      if (this.restricted) {
-        this.cleanPaths = {};
-        _ref = this.allPaths;
-        for (path in _ref) {
-          info = _ref[path];
-          cleanInfo = $.extend({}, info);
-          delete cleanInfo.node;
-          this.cleanPaths[path] = cleanInfo;
-        }
-        return this.cleanPaths;
-      } else {
-        return this.allPaths;
-      }
-    };
-
-    DomTextMapper.prototype.getDefaultPath = function() {
-      return this.getPathTo(this.pathStartNode);
+      this.lastScanned = this.timestamp();
+      this.corpus = this.path[path].content;
+      t2 = this.timestamp();
+      return this.path;
     };
 
     DomTextMapper.prototype.selectPath = function(path, scroll) {
-      var info, _ref;
+      var info, node;
       if (scroll == null) {
         scroll = false;
       }
-      info = this.allPaths[path];
-      return this.selectNode((_ref = info.node) != null ? _ref : this.lookUpNode(info.path));
-    };
-
-    DomTextMapper.prototype.scan = function(path) {
-      var node;
-      if (path == null) {
-        path = null;
+      info = this.path[path];
+      if (info == null) {
+        throw new Error("I have no info about a node at " + path);
       }
-      if (path == null) {
-        path = this.getDefaultPath();
-      }
-      if (path === this.scannedPath && this.domStableSince(this.lastScanned)) {
-        return;
-      }
-      this.getAllPaths();
-      node = this.allPaths[path].node;
-      this.mappings = {};
-      this.saveSelection();
-      this.collectStrings(node, path, null, 0, 0);
-      this.restoreSelection();
-      this.scannedPath = path;
-      this.lastScanned = this.timestamp();
-      this.corpus = this.mappings[path].pathInfo.content;
-      return null;
+      node = info != null ? info.node : void 0;
+      node || (node = this.lookUpNode(info.path));
+      return this.selectNode(node, scroll);
     };
 
     DomTextMapper.prototype.performUpdateOnNode = function(node, escalating) {
-      var data, oldIndex, p, parentMappings, parentNode, parentPath, parentPathInfo, path, pathInfo, pathsToDrop, prefix, startTime, _i, _len, _ref;
+      var data, oldIndex, p, parentNode, parentPath, parentPathInfo, path, pathInfo, pathsToDrop, prefix, startTime, _i, _len, _ref;
       if (escalating == null) {
         escalating = false;
       }
       if (node == null) {
         throw new Error("Called performUpdate with a null node!");
       }
+      if (this.path == null) {
+        return;
+      }
       startTime = this.timestamp();
       if (!escalating) {
         this.saveSelection();
       }
       path = this.getPathTo(node);
-      pathInfo = this.allPaths[path];
+      pathInfo = this.path[path];
       if (pathInfo == null) {
-        throw new Error("Can not find path info for path " + path);
+        this.performUpdateOnNode(node.parentNode, true);
+        if (!escalating) {
+          this.restoreSelection();
+        }
+        return;
       }
-      if (this.mappings[path] == null) {
-        throw new error("Can not find mappings for path " + path);
-      }
-      if (pathInfo.node === node && pathInfo.content === this.getNodeContent(node)) {
+      if (pathInfo.node === node && pathInfo.content === this.getNodeContent(node, false)) {
         prefix = path + "/";
         pathsToDrop = p;
         pathsToDrop = [];
-        _ref = this.allPaths;
+        _ref = this.path;
         for (p in _ref) {
           data = _ref[p];
           if (this.stringStartsWith(p, prefix)) {
@@ -155,25 +147,20 @@
         }
         for (_i = 0, _len = pathsToDrop.length; _i < _len; _i++) {
           p = pathsToDrop[_i];
-          delete this.mappings[p];
-          delete this.allPaths[p];
+          delete this.path[p];
         }
-        this.collectPathsForNode(node);
+        this.traverseSubTree(node);
         if (pathInfo.node === this.pathStartNode) {
           console.log("Ended up rescanning the whole doc.");
-          this.collectStrings(node, path, null, 0, 0);
+          this.collectPositions(node, path, null, 0, 0);
         } else {
           parentPath = this.parentPath(path);
-          parentPathInfo = this.allPaths[parentPath];
+          parentPathInfo = this.path[parentPath];
           if (parentPathInfo == null) {
             throw new Error("While performing update on node " + path + ", no path info found for parent path: " + parentPath);
           }
-          parentMappings = this.mappings[parentPath];
-          if (parentMappings == null) {
-            throw new Error("While performing update on node " + path + ", no mappings info found for parent path: " + parentPath);
-          }
-          oldIndex = this.mappings[path].start - parentMappings.start;
-          this.collectStrings(node, path, parentPathInfo.content, parentMappings.start, oldIndex);
+          oldIndex = node === node.parentNode.firstChild ? 0 : this.path[this.getPathTo(node.previousSibling)].end - parentPathInfo.start;
+          this.collectPositions(node, path, parentPathInfo.content, parentPathInfo.start, oldIndex);
         }
       } else {
         if (pathInfo.node !== this.pathStartNode) {
@@ -189,62 +176,30 @@
       }
     };
 
-    DomTextMapper.prototype.getRangeForPath = function(path) {
+    DomTextMapper.prototype.getInfoForPath = function(path) {
       var result;
-      result = this.mappings[path];
-      if (result == null) {
-        throw new Error("Found no range for path '" + path + "'!");
+      if (this.path == null) {
+        throw new Error("Can't get info before running a scan() !");
       }
-      if (this.restricted) {
-        result = $.extend({}, result);
-        result.pathInfo = $.extend({}, result.pathInfo);
-        delete result.pathInfo.node;
+      result = this.path[path];
+      if (result == null) {
+        throw new Error("Found no info for path '" + path + "'!");
       }
       return result;
     };
 
-    DomTextMapper.prototype.getMappingsForRanges = function(ranges, path) {
-      var cleanMapping, cleanNode, mapping, mappings, node, range;
-      if (path == null) {
-        path = null;
+    DomTextMapper.prototype.getInfoForNode = function(node) {
+      return this.getInfoForPath(this.getPathTo(node));
+    };
+
+    DomTextMapper.prototype.getMappingsForCharRanges = function(charRanges) {
+      var charRange, mapping, _i, _len, _results;
+      _results = [];
+      for (_i = 0, _len = charRanges.length; _i < _len; _i++) {
+        charRange = charRanges[_i];
+        _results.push(mapping = this.getMappingsForCharRange(charRange.start, charRange.end));
       }
-      mappings = (function() {
-        var _i, _len, _results;
-        _results = [];
-        for (_i = 0, _len = ranges.length; _i < _len; _i++) {
-          range = ranges[_i];
-          _results.push(mapping = this.getMappingsForRange(range.start, range.end, path));
-        }
-        return _results;
-      }).call(this);
-      if (this.restricted) {
-        mappings = (function() {
-          var _i, _len, _results;
-          _results = [];
-          for (_i = 0, _len = mappings.length; _i < _len; _i++) {
-            mapping = mappings[_i];
-            cleanMapping = $.extend({}, mapping);
-            delete cleanMapping.range;
-            cleanMapping.nodes = (function() {
-              var _j, _len1, _ref, _results1;
-              _ref = cleanMapping.nodes;
-              _results1 = [];
-              for (_j = 0, _len1 = _ref.length; _j < _len1; _j++) {
-                node = _ref[_j];
-                cleanNode = $.extend({}, node);
-                cleanNode.element = $.extend({}, cleanNode.element);
-                cleanNode.element.pathInfo = $.extend({}, cleanNode.element.pathInfo);
-                delete cleanNode.element.pathInfo.node;
-                _results1.push(cleanNode);
-              }
-              return _results1;
-            })();
-            _results.push(cleanMapping);
-          }
-          return _results;
-        })();
-      }
-      return mappings;
+      return _results;
     };
 
     DomTextMapper.prototype.getContentForPath = function(path) {
@@ -254,7 +209,7 @@
       if (path == null) {
         path = this.getDefaultPath();
       }
-      return this.allPaths[path].content;
+      return this.path[path].content;
     };
 
     DomTextMapper.prototype.getLengthForPath = function(path) {
@@ -264,19 +219,28 @@
       if (path == null) {
         path = this.getDefaultPath();
       }
-      return this.allPaths[path].length;
+      return this.path[path].length;
     };
 
-    DomTextMapper.prototype.getContentForRange = function(start, end, path) {
+    DomTextMapper.prototype.getDocLength = function() {
+      return this.getLengthForPath();
+    };
+
+    DomTextMapper.prototype.getContentForCharRange = function(start, end, path) {
+      var text;
       if (path == null) {
         path = null;
       }
-      return this.getContentForPath(path).substr(start, end - start);
+      text = this.getContentForPath(path).substr(start, end - start);
+      return text.trim();
     };
 
-    DomTextMapper.prototype.getContextForRange = function(start, end) {
+    DomTextMapper.prototype.getContextForCharRange = function(start, end, path) {
       var content, prefix, prefixLen, prefixStart, suffix;
-      content = this.getContentForPath();
+      if (path == null) {
+        path = null;
+      }
+      content = this.getContentForPath(path);
       prefixStart = Math.max(0, start - CONTEXT_LEN);
       prefixLen = start - prefixStart;
       prefix = content.substr(prefixStart, prefixLen);
@@ -284,74 +248,83 @@
       return [prefix.trim(), suffix.trim()];
     };
 
-    DomTextMapper.prototype.getMappingsForRange = function(start, end, path) {
-      var endInfo, endMatch, endNode, endOffset, endPath, mapping, matches, p, r, result, startInfo, startMatch, startNode, startOffset, startPath, _ref,
+    DomTextMapper.prototype.getMappingsForCharRange = function(start, end) {
+      var endInfo, endMapping, endNode, endOffset, endPath, info, mappings, p, r, result, startInfo, startMapping, startNode, startOffset, startPath, _ref,
         _this = this;
-      if (path == null) {
-        path = null;
-      }
       if (!((start != null) && (end != null))) {
         throw new Error("start and end is required!");
       }
-      if (path != null) {
-        this.scan(path);
-      }
-      if (this.scannedPath == null) {
-        throw new Error("Can not run getMappingsFor() without existing mappings. Either supply a path to scan, or call scan() beforehand!");
-      }
-      matches = [];
-      _ref = this.mappings;
+      this.scan();
+      mappings = [];
+      _ref = this.path;
       for (p in _ref) {
-        mapping = _ref[p];
-        if (mapping.atomic && this.regions_overlap(mapping.start, mapping.end, start, end)) {
-          (function(mapping) {
-            var full_match, match;
-            match = {
-              element: mapping
+        info = _ref[p];
+        if (info.atomic && this.regions_overlap(info.start, info.end, start, end)) {
+          (function(info) {
+            var full, mapping;
+            mapping = {
+              element: info
             };
-            full_match = start <= mapping.start && mapping.end <= end;
-            if (full_match) {
-              match.full = true;
-              match.wanted = mapping.content;
+            full = start <= info.start && info.end <= end;
+            if (full) {
+              mapping.full = true;
+              mapping.wanted = info.content;
+              mapping.yields = info.content;
+              mapping.startCorrected = 0;
+              mapping.endCorrected = 0;
             } else {
-              if (start <= mapping.start) {
-                match.end = end - mapping.start;
-                match.wanted = mapping.pathInfo.content.substr(0, match.end);
-              } else if (mapping.end <= end) {
-                match.start = start - mapping.start;
-                match.wanted = mapping.pathInfo.content.substr(match.start);
+              if (info.node.nodeType === Node.TEXT_NODE) {
+                if (start <= info.start) {
+                  mapping.end = end - info.start;
+                  mapping.wanted = info.content.substr(0, mapping.end);
+                } else if (info.end <= end) {
+                  mapping.start = start - info.start;
+                  mapping.wanted = info.content.substr(mapping.start);
+                } else {
+                  mapping.start = start - info.start;
+                  mapping.end = end - info.start;
+                  mapping.wanted = info.content.substr(mapping.start, mapping.end - mapping.start);
+                }
+                _this.computeSourcePositions(mapping);
+                mapping.yields = info.node.data.substr(mapping.startCorrected, mapping.endCorrected - mapping.startCorrected);
+              } else if ((info.node.nodeType === Node.ELEMENT_NODE) && (info.node.tagName.toLowerCase() === "img")) {
+                console.log("Can not select a sub-string from the title of an image. Selecting all.");
+                mapping.full = true;
+                mapping.wanted = info.content;
               } else {
-                match.start = start - mapping.start;
-                match.end = end - mapping.start;
-                match.wanted = mapping.pathInfo.content.substr(match.start, match.end - match.start);
+                console.log("Warning: no idea how to handle partial mappings for node type " + info.node.nodeType);
+                if (info.node.tagName != null) {
+                  console.log("Tag: " + info.node.tagName);
+                }
+                console.log("Selecting all.");
+                mapping.full = true;
+                mapping.wanted = info.content;
               }
             }
-            _this.computeSourcePositions(match);
-            match.yields = mapping.pathInfo.node.data.substr(match.startCorrected, match.endCorrected - match.startCorrected);
-            return matches.push(match);
-          })(mapping);
+            return mappings.push(mapping);
+          })(info);
         }
       }
-      if (matches.length === 0) {
-        throw new Error("No matches found for [" + start + ":" + end + "]!");
+      if (mappings.length === 0) {
+        throw new Error("No mappings found for [" + start + ":" + end + "]!");
       }
       r = this.rootWin.document.createRange();
-      startMatch = matches[0];
-      startNode = startMatch.element.pathInfo.node;
-      startPath = startMatch.element.pathInfo.path;
-      startOffset = startMatch.startCorrected;
-      if (startMatch.full) {
+      startMapping = mappings[0];
+      startNode = startMapping.element.node;
+      startPath = startMapping.element.path;
+      startOffset = startMapping.startCorrected;
+      if (startMapping.full) {
         r.setStartBefore(startNode);
         startInfo = startPath;
       } else {
         r.setStart(startNode, startOffset);
         startInfo = startPath + ":" + startOffset;
       }
-      endMatch = matches[matches.length - 1];
-      endNode = endMatch.element.pathInfo.node;
-      endPath = endMatch.element.pathInfo.path;
-      endOffset = endMatch.endCorrected;
-      if (endMatch.full) {
+      endMapping = mappings[mappings.length - 1];
+      endNode = endMapping.element.node;
+      endPath = endMapping.element.path;
+      endOffset = endMapping.endCorrected;
+      if (endMapping.full) {
         r.setEndAfter(endNode);
         endInfo = endPath;
       } else {
@@ -359,8 +332,8 @@
         endInfo = endPath + ":" + endOffset;
       }
       result = {
-        nodes: matches,
-        range: r,
+        mappings: mappings,
+        realRange: r,
         rangeInfo: {
           startPath: startPath,
           startOffset: startOffset,
@@ -380,6 +353,10 @@
 
     DomTextMapper.prototype.stringStartsWith = function(string, prefix) {
       return prefix === string.substr(0, prefix.length);
+    };
+
+    DomTextMapper.prototype.stringEndsWith = function(string, suffix) {
+      return suffix === string.substr(string.length - suffix.length);
     };
 
     DomTextMapper.prototype.parentPath = function(path) {
@@ -433,23 +410,40 @@
       return xpath;
     };
 
-    DomTextMapper.prototype.collectPathsForNode = function(node) {
+    DomTextMapper.prototype.traverseSubTree = function(node, invisible, verbose) {
       var child, cont, path, _i, _len, _ref;
+      if (invisible == null) {
+        invisible = false;
+      }
+      if (verbose == null) {
+        verbose = false;
+      }
+      path = this.getPathTo(node);
       cont = this.getNodeContent(node, false);
+      this.path[path] = {
+        path: path,
+        content: cont,
+        length: cont.length,
+        node: node
+      };
       if (cont.length) {
-        path = this.getPathTo(node);
-        this.allPaths[path] = {
-          path: path,
-          content: cont,
-          length: cont.length,
-          node: node
-        };
+        if (verbose) {
+          console.log("Collected info about path " + path);
+        }
+        if (invisible) {
+          console.log("Something seems to be wrong. I see visible content @ " + path + ", while some of the ancestor nodes reported empty contents. Probably a new selection API bug....");
+        }
+      } else {
+        if (verbose) {
+          console.log("Found no content at path " + path);
+        }
+        invisible = true;
       }
       if (node.hasChildNodes()) {
         _ref = node.childNodes;
         for (_i = 0, _len = _ref.length; _i < _len; _i++) {
           child = _ref[_i];
-          this.collectPathsForNode(child);
+          this.traverseSubTree(child, invisible, verbose);
         }
       }
       return null;
@@ -472,51 +466,72 @@
 
     DomTextMapper.prototype.saveSelection = function() {
       var i, sel, _i, _ref, _ref1;
+      if (this.savedSelection != null) {
+        console.log("Selection saved at:");
+        console.log(this.selectionSaved);
+        throw new Error("Selection already saved!");
+      }
       sel = this.rootWin.getSelection();
       for (i = _i = 0, _ref = sel.rangeCount; 0 <= _ref ? _i < _ref : _i > _ref; i = 0 <= _ref ? ++_i : --_i) {
-        this.oldRanges = sel.getRangeAt(i);
+        this.savedSelection = sel.getRangeAt(i);
       }
       switch (sel.rangeCount) {
         case 0:
-          return (_ref1 = this.oldRanges) != null ? _ref1 : this.oldRanges = [];
+          if ((_ref1 = this.savedSelection) == null) {
+            this.savedSelection = [];
+          }
+          break;
         case 1:
-          return this.oldRanges = [this.oldRanges];
+          this.savedSelection = [this.savedSelection];
+      }
+      try {
+        throw new Error("Selection was saved here");
+      } catch (exception) {
+        return this.selectionSaved = exception.stack;
       }
     };
 
     DomTextMapper.prototype.restoreSelection = function() {
-      var range, sel, _i, _len, _ref, _results;
+      var range, sel, _i, _len, _ref;
+      if (this.savedSelection == null) {
+        throw new Error("No selection to restore.");
+      }
       sel = this.rootWin.getSelection();
       sel.removeAllRanges();
-      _ref = this.oldRanges;
-      _results = [];
+      _ref = this.savedSelection;
       for (_i = 0, _len = _ref.length; _i < _len; _i++) {
         range = _ref[_i];
-        _results.push(sel.addRange(range));
+        sel.addRange(range);
       }
-      return _results;
+      return delete this.savedSelection;
     };
 
     DomTextMapper.prototype.selectNode = function(node, scroll) {
-      var children, range, sel, sn, _ref;
+      var children, realRange, sel, sn, _ref;
       if (scroll == null) {
         scroll = false;
       }
       sel = this.rootWin.getSelection();
       sel.removeAllRanges();
-      range = this.rootWin.document.createRange();
-      if (USE_THEAD_TBODY_WORKAROUND && node.nodeType === Node.ELEMENT_NODE && ((_ref = node.tagName.toLowerCase()) === "thead" || _ref === "tbody") && node.hasChildNodes()) {
+      realRange = this.rootWin.document.createRange();
+      if (node.nodeType === Node.ELEMENT_NODE && node.hasChildNodes() && ((USE_THEAD_TBODY_WORKAROUND && ((_ref = node.tagName.toLowerCase()) === "thead" || _ref === "tbody")) || (USE_OL_WORKAROUND && node.tagName.toLowerCase() === "ol") || (USE_CAPTION_WORKAROUND && node.tagName.toLowerCase() === "caption"))) {
         children = node.childNodes;
-        range.setStartBefore(children[0]);
-        range.setEndAfter(children[children.length - 1]);
-        sel.addRange(range);
+        realRange.setStartBefore(children[0]);
+        realRange.setEndAfter(children[children.length - 1]);
+        sel.addRange(realRange);
       } else {
         if (USE_TABLE_TEXT_WORKAROUND && node.nodeType === Node.TEXT_NODE && node.parentNode.tagName.toLowerCase() === "table") {
 
         } else {
-          range.setStartBefore(node);
-          range.setEndAfter(node);
-          sel.addRange(range);
+          try {
+            realRange.setStartBefore(node);
+            realRange.setEndAfter(node);
+            sel.addRange(realRange);
+          } catch (exception) {
+            if (!(USE_EMPTY_TEXT_WORKAROUND && this.isWhitespace(node))) {
+              throw exception;
+            }
+          }
         }
       }
       if (scroll) {
@@ -529,6 +544,11 @@
       return sel;
     };
 
+    DomTextMapper.prototype.readSelectionText = function(sel) {
+      sel || (sel = this.rootWin.getSelection());
+      return sel.toString().trim().replace(/\n/g, " ").replace(/\s{2,}/g, " ");
+    };
+
     DomTextMapper.prototype.getNodeSelectionText = function(node, shouldRestoreSelection) {
       var sel, text;
       if (shouldRestoreSelection == null) {
@@ -538,7 +558,7 @@
         this.saveSelection();
       }
       sel = this.selectNode(node);
-      text = sel.toString().trim().replace(/\n/g, " ").replace(/[ ][ ]+/g, " ");
+      text = this.readSelectionText(sel);
       if (shouldRestoreSelection) {
         this.restoreSelection();
       }
@@ -547,10 +567,15 @@
 
     DomTextMapper.prototype.computeSourcePositions = function(match) {
       var dc, displayEnd, displayIndex, displayStart, displayText, sc, sourceEnd, sourceIndex, sourceStart, sourceText;
-      sourceText = match.element.pathInfo.node.data.replace(/\n/g, " ");
-      displayText = match.element.pathInfo.content;
+      sourceText = match.element.node.data.replace(/\n/g, " ");
+      displayText = match.element.content;
       displayStart = match.start != null ? match.start : 0;
       displayEnd = match.end != null ? match.end : displayText.length;
+      if (displayEnd === 0) {
+        match.startCorrected = 0;
+        match.endCorrected = 0;
+        return;
+      }
       sourceIndex = 0;
       displayIndex = 0;
       while (!((sourceStart != null) && (sourceEnd != null))) {
@@ -579,7 +604,7 @@
       return this.getNodeSelectionText(node, shouldRestoreSelection);
     };
 
-    DomTextMapper.prototype.collectStrings = function(node, path, parentContent, parentIndex, index) {
+    DomTextMapper.prototype.collectPositions = function(node, path, parentContent, parentIndex, index) {
       var atomic, child, childPath, children, content, endIndex, i, newCount, nodeName, oldCount, pathInfo, pos, startIndex, typeCount;
       if (parentContent == null) {
         parentContent = null;
@@ -590,9 +615,12 @@
       if (index == null) {
         index = 0;
       }
-      pathInfo = this.allPaths[path];
+      pathInfo = this.path[path];
       content = pathInfo != null ? pathInfo.content : void 0;
       if (!(content != null) || content === "") {
+        pathInfo.start = parentIndex + index;
+        pathInfo.end = parentIndex + index;
+        pathInfo.atomic = false;
         return index;
       }
       startIndex = parentContent != null ? parentContent.indexOf(content, index) : index;
@@ -601,15 +629,9 @@
       }
       endIndex = startIndex + content.length;
       atomic = !node.hasChildNodes();
-      this.mappings[path] = {
-        pathInfo: pathInfo,
-        start: parentIndex + startIndex,
-        end: parentIndex + endIndex,
-        atomic: atomic
-      };
-      if (this.declareMappings) {
-        console.log("Found mappings for [" + this.mappings[path].start + ":" + this.mappings[path].end + "]: " + pathInfo.content);
-      }
+      pathInfo.start = parentIndex + startIndex;
+      pathInfo.end = parentIndex + endIndex;
+      pathInfo.atomic = atomic;
       if (!atomic) {
         children = node.childNodes;
         i = 0;
@@ -622,11 +644,17 @@
           newCount = oldCount != null ? oldCount + 1 : 1;
           typeCount[nodeName] = newCount;
           childPath = path + "/" + nodeName + (newCount > 1 ? "[" + newCount + "]" : "");
-          pos = this.collectStrings(child, childPath, content, parentIndex + startIndex, pos);
+          pos = this.collectPositions(child, childPath, content, parentIndex + startIndex, pos);
           i++;
         }
       }
       return endIndex;
+    };
+
+    WHITESPACE = /^\s*$/;
+
+    DomTextMapper.prototype.isWhitespace = function(node) {
+      return node.nodeType === Node.TEXT_NODE && WHITESPACE.test(node.data);
     };
 
     return DomTextMapper;

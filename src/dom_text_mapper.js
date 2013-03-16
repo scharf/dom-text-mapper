@@ -167,7 +167,6 @@
           parentNode = node.parentNode != null ? node.parentNode : (parentPath = this.parentPath(path), this.lookUpNode(parentPath));
           this.performUpdateOnNode(parentNode, true);
         } else {
-          console.log("I can not go up, since I'm already at path start node. Barking out.");
           throw new Error("Can not keep up with the changes, since even the node configured as path start node was replaced.");
         }
       }

@@ -93,7 +93,7 @@ class window.DomTextMapper
     startTime = @timestamp()
     @saveSelection()
     @path = {}
-    @traverseSubTree @pathStartNode
+    @traverseSubTree @pathStartNode, @getDefaultPath()
     t1 = @timestamp()
 #    console.log "Phase I (Path traversal) took " + (t1 - startTime) + " ms."
 
@@ -148,7 +148,7 @@ class window.DomTextMapper
         delete @path[p]        
         
 #      console.log "Done. Collecting new path info..."
-      @traverseSubTree node
+      @traverseSubTree node, path
 
 #      console.log "Done. Updating mappings..."
 
@@ -369,28 +369,33 @@ class window.DomTextMapper
       when "#cdata-section" then return "cdata-section()"
       else return nodeName
 
+  getNodePosition: (node) ->
+    pos = 0
+    tmp = node
+    while tmp
+      if tmp.nodeName is node.nodeName
+        pos++
+      tmp = tmp.previousSibling
+    pos
+
+  getPathSegment: (node) ->
+    name = @getProperNodeName node
+    pos = @getNodePosition node
+    name + (if pos > 1 then "[#{pos}]" else "")
+
   getPathTo: (node) ->
     xpath = '';
     while node != @rootNode
-      pos = 0
-      tempitem2 = node
-      while tempitem2
-        if tempitem2.nodeName is node.nodeName
-          pos++
-        tempitem2 = tempitem2.previousSibling
-
-      xpath = (@getProperNodeName node) +
-          (if pos>1 then "[" + pos + ']' else "") + '/' + xpath
+      xpath = (@getPathSegment node) + '/' + xpath
       node = node.parentNode
     xpath = (if @rootNode.ownerDocument? then './' else '/') + xpath
     xpath = xpath.replace /\/$/, ''
     xpath
 
   # This method is called recursively, to traverse a given sub-tree of the DOM.
-  traverseSubTree: (node, invisible = false, verbose = false) ->
+  traverseSubTree: (node, path, invisible = false, verbose = false) ->
     # Step one: get rendered node content, and store path info,
     # if there is valuable content
-    path = @getPathTo node
     cont = @getNodeContent node, false
     @path[path] =
       path: path
@@ -414,7 +419,8 @@ class window.DomTextMapper
     # A: I seem to remember that the answer is yes, but I don't remember why.
     if node.hasChildNodes()
       for child in node.childNodes
-        @traverseSubTree child, invisible, verbose
+        subpath = path + '/' + (@getPathSegment child)
+        @traverseSubTree child, subpath, invisible, verbose
     null
 
   getBody: -> (@rootWin.document.getElementsByTagName "body")[0]

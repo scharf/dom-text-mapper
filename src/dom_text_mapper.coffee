@@ -442,37 +442,37 @@ class window.DomTextMapper
     null
 
   # Run a round of DOM traverse tasks, and schedule the next one
-  runTraverseRounds: (mapper) ->
+  runTraverseRounds: ->
     try
-      mapper.saveSelection()
-      roundStart = mapper.timestamp()
+      @saveSelection()
+      roundStart = @timestamp()
       tasksDone = 0
-      while mapper.traverseTasks.length and (mapper.timestamp() - roundStart < SCAN_JOB_LENGTH_MS)
-#        console.log "Queue length is: " + mapper.traverseTasks.length
-        task = mapper.traverseTasks.pop()
-        mapper.executeTraverseTask task
+      while @traverseTasks.length and (@timestamp() - roundStart < SCAN_JOB_LENGTH_MS)
+#        console.log "Queue length is: " + @traverseTasks.length
+        task = @traverseTasks.pop()
+        @executeTraverseTask task
         tasksDone += 1
         # for leaf nodes,        
         unless task.node.hasChildNodes()
           # count the chars we have covered
-          mapper.traverseCoveredChars += mapper.path[task.path].length
+          @traverseCoveredChars += @path[task.path].length
 
 #        console.log "Round covered " + tasksDone + " tasks " +
-#          "in " + (mapper.timestamp() - roundStart) + " ms." +
+#          "in " + (@timestamp() - roundStart) + " ms." +
 #          " Covered chars: " + done
 
-      mapper.restoreSelection()
-      if mapper.traverseOnProgress?
-        progress = mapper.traverseCoveredChars / mapper.traverseTotalLength        
-        mapper.traverseOnProgress progress
+      @restoreSelection()
+      if @traverseOnProgress?
+        progress = @traverseCoveredChars / @traverseTotalLength        
+        @traverseOnProgress progress
 
       # Is there still more work to do?
-      if mapper.traverseTasks.length
+      if @traverseTasks.length
         # OK, scheduling next round
-        window.setTimeout mapper.runTraverseRounds, 0, mapper
+        window.setTimeout => @runTraverseRounds()
       else
         # We are ready!
-        mapper.traverseOnFinished()
+        @traverseOnFinished()
      catch exception
       console.log "OOps. Internal error:"
       console.log exception
@@ -493,7 +493,7 @@ class window.DomTextMapper
     @traverseOnFinished = onFinished
 
     # Schedule first round
-    window.setTimeout @runTraverseRounds, 0, this
+    window.setTimeout => @runTraverseRounds()
 
 
   getBody: -> (@rootWin.document.getElementsByTagName "body")[0]

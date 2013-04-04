@@ -2,7 +2,7 @@
 (function() {
 
   window.DomTextMapper = (function() {
-    var CONTEXT_LEN, USE_CAPTION_WORKAROUND, USE_EMPTY_TEXT_WORKAROUND, USE_OL_WORKAROUND, USE_TABLE_TEXT_WORKAROUND, USE_THEAD_TBODY_WORKAROUND, WHITESPACE;
+    var CONTEXT_LEN, SCAN_JOB_LENGTH_MS, USE_CAPTION_WORKAROUND, USE_EMPTY_TEXT_WORKAROUND, USE_OL_WORKAROUND, USE_TABLE_TEXT_WORKAROUND, USE_THEAD_TBODY_WORKAROUND, WHITESPACE;
 
     USE_THEAD_TBODY_WORKAROUND = true;
 
@@ -15,6 +15,8 @@
     USE_EMPTY_TEXT_WORKAROUND = true;
 
     CONTEXT_LEN = 32;
+
+    SCAN_JOB_LENGTH_MS = 100;
 
     DomTextMapper.instances = [];
 
@@ -76,24 +78,34 @@
       return this.lastDOMChange = this.timestamp();
     };
 
-    DomTextMapper.prototype.scan = function() {
-      var node, path, startTime, t1, t2;
+    DomTextMapper.prototype.scan = function(onProgress, onFinished) {
+      var pathStart, startTime, task,
+        _this = this;
       if (this.domStableSince(this.lastScanned)) {
-        return this.path;
+        onFinished(this.path);
       }
       startTime = this.timestamp();
       this.saveSelection();
       this.path = {};
-      this.traverseSubTree(this.pathStartNode);
-      t1 = this.timestamp();
-      path = this.getPathTo(this.pathStartNode);
-      node = this.path[path].node;
-      this.collectPositions(node, path, null, 0, 0);
-      this.restoreSelection();
-      this.lastScanned = this.timestamp();
-      this.corpus = this.path[path].content;
-      t2 = this.timestamp();
-      return this.path;
+      pathStart = this.getDefaultPath();
+      task = {
+        node: this.pathStartNode,
+        path: pathStart
+      };
+      this.finishTraverse(task, onProgress, function() {
+        var node, t1, t2;
+        t1 = _this.timestamp();
+        console.log("Phase I (Path traversal) took " + (t1 - startTime) + " ms.");
+        node = _this.path[pathStart].node;
+        _this.collectPositions(node, pathStart, null, 0, 0);
+        _this.restoreSelection();
+        _this.lastScanned = _this.timestamp();
+        _this.corpus = _this.path[pathStart].content;
+        t2 = _this.timestamp();
+        console.log("Phase II (offset calculation) took " + (t2 - t1) + " ms.");
+        return onFinished(_this.path);
+      });
+      return null;
     };
 
     DomTextMapper.prototype.selectPath = function(path, scroll) {
@@ -111,7 +123,8 @@
     };
 
     DomTextMapper.prototype.performUpdateOnNode = function(node, escalating) {
-      var data, oldIndex, p, parentNode, parentPath, parentPathInfo, path, pathInfo, pathsToDrop, prefix, startTime, _i, _len, _ref;
+      var data, p, parentNode, parentPath, path, pathInfo, pathsToDrop, prefix, startTime, task, _i, _len, _ref,
+        _this = this;
       if (escalating == null) {
         escalating = false;
       }
@@ -149,19 +162,25 @@
           p = pathsToDrop[_i];
           delete this.path[p];
         }
-        this.traverseSubTree(node);
-        if (pathInfo.node === this.pathStartNode) {
-          console.log("Ended up rescanning the whole doc.");
-          this.collectPositions(node, path, null, 0, 0);
-        } else {
-          parentPath = this.parentPath(path);
-          parentPathInfo = this.path[parentPath];
-          if (parentPathInfo == null) {
-            throw new Error("While performing update on node " + path + ", no path info found for parent path: " + parentPath);
+        task = {
+          path: path,
+          node: node
+        };
+        this.finishTraverse(task, null, function() {
+          var oldIndex, parentPath, parentPathInfo;
+          if (pathInfo.node === _this.pathStartNode) {
+            console.log("Ended up rescanning the whole doc.");
+            return _this.collectPositions(node, path, null, 0, 0);
+          } else {
+            parentPath = _this.parentPath(path);
+            parentPathInfo = _this.path[parentPath];
+            if (parentPathInfo == null) {
+              throw new Error("While performing update on node " + path + ", no path info found for parent path: " + parentPath);
+            }
+            oldIndex = node === node.parentNode.firstChild ? 0 : _this.path[_this.getPathTo(node.previousSibling)].end - parentPathInfo.start;
+            return _this.collectPositions(node, path, parentPathInfo.content, parentPathInfo.start, oldIndex);
           }
-          oldIndex = node === node.parentNode.firstChild ? 0 : this.path[this.getPathTo(node.previousSibling)].end - parentPathInfo.start;
-          this.collectPositions(node, path, parentPathInfo.content, parentPathInfo.start, oldIndex);
-        }
+        });
       } else {
         if (pathInfo.node !== this.pathStartNode) {
           parentNode = node.parentNode != null ? node.parentNode : (parentPath = this.parentPath(path), this.lookUpNode(parentPath));
@@ -253,7 +272,9 @@
       if (!((start != null) && (end != null))) {
         throw new Error("start and end is required!");
       }
-      this.scan();
+      if (!this.domStableSince(this.lastScanned)) {
+        throw new Error("Can not get mappings, since the dom has changed since last scanned. Call scan first.");
+      }
       mappings = [];
       _ref = this.path;
       for (p in _ref) {
@@ -389,19 +410,31 @@
       }
     };
 
+    DomTextMapper.prototype.getNodePosition = function(node) {
+      var pos, tmp;
+      pos = 0;
+      tmp = node;
+      while (tmp) {
+        if (tmp.nodeName === node.nodeName) {
+          pos++;
+        }
+        tmp = tmp.previousSibling;
+      }
+      return pos;
+    };
+
+    DomTextMapper.prototype.getPathSegment = function(node) {
+      var name, pos;
+      name = this.getProperNodeName(node);
+      pos = this.getNodePosition(node);
+      return name + (pos > 1 ? "[" + pos + "]" : "");
+    };
+
     DomTextMapper.prototype.getPathTo = function(node) {
-      var pos, tempitem2, xpath;
+      var xpath;
       xpath = '';
       while (node !== this.rootNode) {
-        pos = 0;
-        tempitem2 = node;
-        while (tempitem2) {
-          if (tempitem2.nodeName === node.nodeName) {
-            pos++;
-          }
-          tempitem2 = tempitem2.previousSibling;
-        }
-        xpath = (this.getProperNodeName(node)) + (pos > 1 ? "[" + pos + ']' : "") + '/' + xpath;
+        xpath = (this.getPathSegment(node)) + "/" + xpath;
         node = node.parentNode;
       }
       xpath = (this.rootNode.ownerDocument != null ? './' : '/') + xpath;
@@ -409,15 +442,12 @@
       return xpath;
     };
 
-    DomTextMapper.prototype.traverseSubTree = function(node, invisible, verbose) {
-      var child, cont, path, _i, _len, _ref;
-      if (invisible == null) {
-        invisible = false;
-      }
-      if (verbose == null) {
-        verbose = false;
-      }
-      path = this.getPathTo(node);
+    DomTextMapper.prototype.executeTraverseTask = function(task) {
+      var child, cont, invisiable, invisible, node, path, verbose, _i, _len, _ref, _ref1, _ref2;
+      node = task.node;
+      path = task.path;
+      invisiable = (_ref = task.invisible) != null ? _ref : false;
+      verbose = (_ref1 = task.verbose) != null ? _ref1 : false;
       cont = this.getNodeContent(node, false);
       this.path[path] = {
         path: path,
@@ -439,13 +469,64 @@
         invisible = true;
       }
       if (node.hasChildNodes()) {
-        _ref = node.childNodes;
-        for (_i = 0, _len = _ref.length; _i < _len; _i++) {
-          child = _ref[_i];
-          this.traverseSubTree(child, invisible, verbose);
+        _ref2 = node.childNodes;
+        for (_i = 0, _len = _ref2.length; _i < _len; _i++) {
+          child = _ref2[_i];
+          this.traverseTasks.push({
+            node: child,
+            path: path + '/' + (this.getPathSegment(child)),
+            invisible: invisible,
+            verbose: verbose
+          });
         }
       }
       return null;
+    };
+
+    DomTextMapper.prototype.runTraverseRound = function() {
+      var progress, roundStart, task, tasksDone;
+      roundStart = this.timestamp();
+      tasksDone = 0;
+      while (this.traverseTasks.length && (this.timestamp() - roundStart < SCAN_JOB_LENGTH_MS)) {
+        task = this.traverseTasks.pop();
+        this.executeTraverseTask(task);
+        tasksDone += 1;
+        if (!task.node.hasChildNodes()) {
+          this.traverseCoveredChars += this.path[task.path].length;
+        }
+      }
+      if (this.traverseOnProgress != null) {
+        progress = this.traverseCoveredChars / this.traverseTotalLength;
+        return this.traverseOnProgress(progress);
+      }
+    };
+
+    DomTextMapper.prototype.runTraverseRoundsUntilReady = function(mapper) {
+      try {
+        mapper.runTraverseRound();
+        if (mapper.traverseTasks.length) {
+          return window.setTimeout(mapper.runTraverseRoundsUntilReady, 0, mapper);
+        } else {
+          return mapper.traverseOnFinished();
+        }
+      } catch (exception) {
+        console.log("OOps. Internal error:");
+        console.log(exception);
+        return console.log(exception.stack);
+      }
+    };
+
+    DomTextMapper.prototype.finishTraverse = function(rootTask, onProgress, onFinished) {
+      if ((this.traverseTasks != null) && this.traverseTasks.size) {
+        throw new Error("Error: a DOM traverse is already in progress!");
+      }
+      this.traverseTasks = [];
+      this.executeTraverseTask(rootTask);
+      this.traverseTotalLength = this.path[rootTask.path].length;
+      this.traverseOnProgress = onProgress;
+      this.traverseCoveredChars = 0;
+      this.traverseOnFinished = onFinished;
+      return this.runTraverseRoundsUntilReady(this);
     };
 
     DomTextMapper.prototype.getBody = function() {

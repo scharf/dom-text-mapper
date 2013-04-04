@@ -85,7 +85,6 @@
         onFinished(this.path);
       }
       startTime = this.timestamp();
-      this.saveSelection();
       this.path = {};
       pathStart = this.getDefaultPath();
       task = {
@@ -98,7 +97,6 @@
         console.log("Phase I (Path traversal) took " + (t1 - startTime) + " ms.");
         node = _this.path[pathStart].node;
         _this.collectPositions(node, pathStart, null, 0, 0);
-        _this.restoreSelection();
         _this.lastScanned = _this.timestamp();
         _this.corpus = _this.path[pathStart].content;
         t2 = _this.timestamp();
@@ -483,29 +481,27 @@
       return null;
     };
 
-    DomTextMapper.prototype.runTraverseRound = function() {
+    DomTextMapper.prototype.runTraverseRounds = function(mapper) {
       var progress, roundStart, task, tasksDone;
-      roundStart = this.timestamp();
-      tasksDone = 0;
-      while (this.traverseTasks.length && (this.timestamp() - roundStart < SCAN_JOB_LENGTH_MS)) {
-        task = this.traverseTasks.pop();
-        this.executeTraverseTask(task);
-        tasksDone += 1;
-        if (!task.node.hasChildNodes()) {
-          this.traverseCoveredChars += this.path[task.path].length;
-        }
-      }
-      if (this.traverseOnProgress != null) {
-        progress = this.traverseCoveredChars / this.traverseTotalLength;
-        return this.traverseOnProgress(progress);
-      }
-    };
-
-    DomTextMapper.prototype.runTraverseRoundsUntilReady = function(mapper) {
       try {
-        mapper.runTraverseRound();
+        mapper.saveSelection();
+        roundStart = mapper.timestamp();
+        tasksDone = 0;
+        while (mapper.traverseTasks.length && (mapper.timestamp() - roundStart < SCAN_JOB_LENGTH_MS)) {
+          task = mapper.traverseTasks.pop();
+          mapper.executeTraverseTask(task);
+          tasksDone += 1;
+          if (!task.node.hasChildNodes()) {
+            mapper.traverseCoveredChars += mapper.path[task.path].length;
+          }
+        }
+        mapper.restoreSelection();
+        if (mapper.traverseOnProgress != null) {
+          progress = mapper.traverseCoveredChars / mapper.traverseTotalLength;
+          mapper.traverseOnProgress(progress);
+        }
         if (mapper.traverseTasks.length) {
-          return window.setTimeout(mapper.runTraverseRoundsUntilReady, 0, mapper);
+          return window.setTimeout(mapper.runTraverseRounds, 0, mapper);
         } else {
           return mapper.traverseOnFinished();
         }
@@ -521,12 +517,14 @@
         throw new Error("Error: a DOM traverse is already in progress!");
       }
       this.traverseTasks = [];
+      this.saveSelection();
       this.executeTraverseTask(rootTask);
+      this.restoreSelection();
       this.traverseTotalLength = this.path[rootTask.path].length;
       this.traverseOnProgress = onProgress;
       this.traverseCoveredChars = 0;
       this.traverseOnFinished = onFinished;
-      return this.runTraverseRoundsUntilReady(this);
+      return window.setTimeout(this.runTraverseRounds, 0, this);
     };
 
     DomTextMapper.prototype.getBody = function() {

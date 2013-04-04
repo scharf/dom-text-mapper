@@ -92,7 +92,6 @@ class window.DomTextMapper
 
 #    console.log "No valid cache, will have to do a scan."
     startTime = @timestamp()
-    @saveSelection()
     @path = {}
 
     pathStart = @getDefaultPath()
@@ -103,7 +102,6 @@ class window.DomTextMapper
 
       node = @path[pathStart].node
       @collectPositions node, pathStart, null, 0, 0
-      @restoreSelection()
       @lastScanned = @timestamp()
       @corpus = @path[pathStart].content
 #      console.log "Corpus is: " + @corpus
@@ -443,38 +441,35 @@ class window.DomTextMapper
           verbose: verbose
     null
 
-  # Run a round of DOM traverse tasks.
-  runTraverseRound: ->
-#    console.log "In traverse round"
-    roundStart = @timestamp()
-    tasksDone = 0
-    while @traverseTasks.length and (@timestamp() - roundStart < SCAN_JOB_LENGTH_MS)
-#      console.log "Queue length is: " + @traverseTasks.length
-      task = @traverseTasks.pop()
-      @executeTraverseTask task
-      tasksDone += 1
-      # for leaf nodes,        
-      unless task.node.hasChildNodes()
-        # count the chars we have covered
-        @traverseCoveredChars += @path[task.path].length
-
-#      console.log "Round covered " + tasksDone + " tasks " +
-#        "in " + (@timestamp() - roundStart) + " ms." +
-#        " Covered chars: " + done
-
-    if @traverseOnProgress?
-      progress = @traverseCoveredChars / @traverseTotalLength        
-      @traverseOnProgress progress
-
   # Run a round of DOM traverse tasks, and schedule the next one
-  runTraverseRoundsUntilReady: (mapper) ->
-    # Run one round        
+  runTraverseRounds: (mapper) ->
     try
-      mapper.runTraverseRound()
+      mapper.saveSelection()
+      roundStart = mapper.timestamp()
+      tasksDone = 0
+      while mapper.traverseTasks.length and (mapper.timestamp() - roundStart < SCAN_JOB_LENGTH_MS)
+#        console.log "Queue length is: " + mapper.traverseTasks.length
+        task = mapper.traverseTasks.pop()
+        mapper.executeTraverseTask task
+        tasksDone += 1
+        # for leaf nodes,        
+        unless task.node.hasChildNodes()
+          # count the chars we have covered
+          mapper.traverseCoveredChars += mapper.path[task.path].length
+
+#        console.log "Round covered " + tasksDone + " tasks " +
+#          "in " + (mapper.timestamp() - roundStart) + " ms." +
+#          " Covered chars: " + done
+
+      mapper.restoreSelection()
+      if mapper.traverseOnProgress?
+        progress = mapper.traverseCoveredChars / mapper.traverseTotalLength        
+        mapper.traverseOnProgress progress
+
       # Is there still more work to do?
       if mapper.traverseTasks.length
         # OK, scheduling next round
-        window.setTimeout mapper.runTraverseRoundsUntilReady, 0, mapper
+        window.setTimeout mapper.runTraverseRounds, 0, mapper
       else
         # We are ready!
         mapper.traverseOnFinished()
@@ -488,13 +483,17 @@ class window.DomTextMapper
   finishTraverse: (rootTask, onProgress, onFinished) ->
     if @traverseTasks? and @traverseTasks.size
       throw new Error "Error: a DOM traverse is already in progress!"
-    @traverseTasks = []    
+    @traverseTasks = []
+    @saveSelection()
     @executeTraverseTask rootTask
+    @restoreSelection()
     @traverseTotalLength = @path[rootTask.path].length
     @traverseOnProgress = onProgress
     @traverseCoveredChars = 0
     @traverseOnFinished = onFinished
-    @runTraverseRoundsUntilReady this
+
+    # Schedule first round
+    window.setTimeout @runTraverseRounds, 0, this
 
 
   getBody: -> (@rootWin.document.getElementsByTagName "body")[0]

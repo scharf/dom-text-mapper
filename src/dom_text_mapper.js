@@ -84,7 +84,7 @@
       startTime = this.timestamp();
       this.saveSelection();
       this.path = {};
-      this.traverseSubTree(this.pathStartNode);
+      this.traverseSubTree(this.pathStartNode, this.getDefaultPath());
       t1 = this.timestamp();
       path = this.getPathTo(this.pathStartNode);
       node = this.path[path].node;
@@ -149,7 +149,7 @@
           p = pathsToDrop[_i];
           delete this.path[p];
         }
-        this.traverseSubTree(node);
+        this.traverseSubTree(node, path);
         if (pathInfo.node === this.pathStartNode) {
           console.log("Ended up rescanning the whole doc.");
           this.collectPositions(node, path, null, 0, 0);
@@ -389,19 +389,31 @@
       }
     };
 
+    DomTextMapper.prototype.getNodePosition = function(node) {
+      var pos, tmp;
+      pos = 0;
+      tmp = node;
+      while (tmp) {
+        if (tmp.nodeName === node.nodeName) {
+          pos++;
+        }
+        tmp = tmp.previousSibling;
+      }
+      return pos;
+    };
+
+    DomTextMapper.prototype.getPathSegment = function(node) {
+      var name, pos;
+      name = this.getProperNodeName(node);
+      pos = this.getNodePosition(node);
+      return name + (pos > 1 ? "[" + pos + "]" : "");
+    };
+
     DomTextMapper.prototype.getPathTo = function(node) {
-      var pos, tempitem2, xpath;
+      var xpath;
       xpath = '';
       while (node !== this.rootNode) {
-        pos = 0;
-        tempitem2 = node;
-        while (tempitem2) {
-          if (tempitem2.nodeName === node.nodeName) {
-            pos++;
-          }
-          tempitem2 = tempitem2.previousSibling;
-        }
-        xpath = (this.getProperNodeName(node)) + (pos > 1 ? "[" + pos + ']' : "") + '/' + xpath;
+        xpath = (this.getPathSegment(node)) + '/' + xpath;
         node = node.parentNode;
       }
       xpath = (this.rootNode.ownerDocument != null ? './' : '/') + xpath;
@@ -409,15 +421,14 @@
       return xpath;
     };
 
-    DomTextMapper.prototype.traverseSubTree = function(node, invisible, verbose) {
-      var child, cont, path, _i, _len, _ref;
+    DomTextMapper.prototype.traverseSubTree = function(node, path, invisible, verbose) {
+      var child, cont, subpath, _i, _len, _ref;
       if (invisible == null) {
         invisible = false;
       }
       if (verbose == null) {
         verbose = false;
       }
-      path = this.getPathTo(node);
       cont = this.getNodeContent(node, false);
       this.path[path] = {
         path: path,
@@ -442,7 +453,8 @@
         _ref = node.childNodes;
         for (_i = 0, _len = _ref.length; _i < _len; _i++) {
           child = _ref[_i];
-          this.traverseSubTree(child, invisible, verbose);
+          subpath = path + '/' + (this.getPathSegment(child));
+          this.traverseSubTree(child, subpath, invisible, verbose);
         }
       }
       return null;

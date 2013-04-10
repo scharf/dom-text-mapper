@@ -429,6 +429,7 @@
       if (verbose == null) {
         verbose = false;
       }
+      this.underTraverse = path;
       cont = this.getNodeContent(node, false);
       this.path[path] = {
         path: path,
@@ -522,6 +523,9 @@
       if (scroll == null) {
         scroll = false;
       }
+      if (node == null) {
+        throw new Error("Called selectNode with null node!");
+      }
       sel = this.rootWin.getSelection();
       sel.removeAllRanges();
       realRange = this.rootWin.document.createRange();
@@ -540,17 +544,23 @@
             sel.addRange(realRange);
           } catch (exception) {
             if (!(USE_EMPTY_TEXT_WORKAROUND && this.isWhitespace(node))) {
-              throw exception;
+              console.log("Warning: failed to scan element @ " + this.underTraverse);
+              console.log("Content is: " + node.innerHTML);
+              console.log("We won't be able to properly anchor to any text inside this element.");
             }
           }
         }
       }
       if (scroll) {
         sn = node;
-        while (!(sn.scrollIntoViewIfNeeded != null)) {
+        while ((sn != null) && !(sn.scrollIntoViewIfNeeded != null)) {
           sn = sn.parentNode;
         }
-        sn.scrollIntoViewIfNeeded();
+        if (sn != null) {
+          sn.scrollIntoViewIfNeeded();
+        } else {
+          console.log("Failed to scroll to element. (Browser does not support scrollIntoViewIfNeeded?)");
+        }
       }
       return sel;
     };
@@ -665,7 +675,25 @@
     WHITESPACE = /^\s*$/;
 
     DomTextMapper.prototype.isWhitespace = function(node) {
-      return node.nodeType === Node.TEXT_NODE && WHITESPACE.test(node.data);
+      var child, mightBeEmpty, result;
+      result = (function() {
+        var _i, _len, _ref;
+        switch (node.nodeType) {
+          case Node.TEXT_NODE:
+            return WHITESPACE.test(node.data);
+          case Node.ELEMENT_NODE:
+            mightBeEmpty = true;
+            _ref = node.childNodes;
+            for (_i = 0, _len = _ref.length; _i < _len; _i++) {
+              child = _ref[_i];
+              mightBeEmpty = mightBeEmpty && this.isWhitespace(child);
+            }
+            return mightBeEmpty;
+          default:
+            return false;
+        }
+      }).call(this);
+      return result;
     };
 
     return DomTextMapper;

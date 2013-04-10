@@ -396,6 +396,7 @@ class window.DomTextMapper
   traverseSubTree: (node, path, invisible = false, verbose = false) ->
     # Step one: get rendered node content, and store path info,
     # if there is valuable content
+    @underTraverse = path
     cont = @getNodeContent node, false
     @path[path] =
       path: path
@@ -461,7 +462,9 @@ class window.DomTextMapper
 
   # Select the given node (for visual identification),
   # and optionally scroll to it
-  selectNode: (node, scroll = false) ->  
+  selectNode: (node, scroll = false) ->
+    unless node?
+      throw new Error "Called selectNode with null node!"
     sel = @rootWin.getSelection()
 
     # clear the selection
@@ -512,12 +515,18 @@ class window.DomTextMapper
           # If this is the case, then it's OK.
           unless USE_EMPTY_TEXT_WORKAROUND and @isWhitespace node
             # No, this is not the case. Then this is an error.
-            throw exception
+            console.log "Warning: failed to scan element @ " + @underTraverse
+            console.log "Content is: " + node.innerHTML
+            console.log "We won't be able to properly anchor to any text inside this element."
+#            throw exception
     if scroll
       sn = node
-      while not sn.scrollIntoViewIfNeeded?
+      while sn? and not sn.scrollIntoViewIfNeeded?
         sn = sn.parentNode
-      sn.scrollIntoViewIfNeeded()
+      if sn?
+        sn.scrollIntoViewIfNeeded()
+      else
+        console.log "Failed to scroll to element. (Browser does not support scrollIntoViewIfNeeded?)"
     sel
 
   # Read and convert the text of the current selection.
@@ -667,4 +676,13 @@ class window.DomTextMapper
 
   # Decides whether a given node is a text node that only contains whitespace
   isWhitespace: (node) ->
-    node.nodeType is Node.TEXT_NODE and WHITESPACE.test node.data
+    result = switch node.nodeType
+      when Node.TEXT_NODE
+        WHITESPACE.test node.data
+      when Node.ELEMENT_NODE
+        mightBeEmpty = true
+        for child in node.childNodes
+          mightBeEmpty = mightBeEmpty and @isWhitespace child
+        mightBeEmpty
+      else false
+    result

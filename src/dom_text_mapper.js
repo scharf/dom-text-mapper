@@ -2,13 +2,15 @@
 (function() {
 
   window.DomTextMapper = (function() {
-    var CONTEXT_LEN, USE_CAPTION_WORKAROUND, USE_EMPTY_TEXT_WORKAROUND, USE_OL_WORKAROUND, USE_TABLE_TEXT_WORKAROUND, USE_THEAD_TBODY_WORKAROUND, WHITESPACE;
+    var CONTEXT_LEN, USE_CAPTION_WORKAROUND, USE_EMPTY_TEXT_WORKAROUND, USE_LINK_WORKAROUND, USE_OL_WORKAROUND, USE_TABLE_TEXT_WORKAROUND, USE_THEAD_TBODY_WORKAROUND, WHITESPACE;
 
     USE_THEAD_TBODY_WORKAROUND = true;
 
     USE_TABLE_TEXT_WORKAROUND = true;
 
     USE_OL_WORKAROUND = true;
+
+    USE_LINK_WORKAROUND = true;
 
     USE_CAPTION_WORKAROUND = true;
 
@@ -529,7 +531,7 @@
       sel = this.rootWin.getSelection();
       sel.removeAllRanges();
       realRange = this.rootWin.document.createRange();
-      if (node.nodeType === Node.ELEMENT_NODE && node.hasChildNodes() && ((USE_THEAD_TBODY_WORKAROUND && ((_ref = node.tagName.toLowerCase()) === "thead" || _ref === "tbody")) || (USE_OL_WORKAROUND && node.tagName.toLowerCase() === "ol") || (USE_CAPTION_WORKAROUND && node.tagName.toLowerCase() === "caption"))) {
+      if (node.nodeType === Node.ELEMENT_NODE && node.hasChildNodes() && ((USE_THEAD_TBODY_WORKAROUND && ((_ref = node.tagName.toLowerCase()) === "thead" || _ref === "tbody")) || (USE_OL_WORKAROUND && node.tagName.toLowerCase() === "ol") || (USE_LINK_WORKAROUND && node.tagName.toLowerCase() === "a") || (USE_CAPTION_WORKAROUND && node.tagName.toLowerCase() === "caption"))) {
         children = node.childNodes;
         realRange.setStartBefore(children[0]);
         realRange.setEndAfter(children[children.length - 1]);

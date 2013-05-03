@@ -195,7 +195,10 @@ class window.DomTextMapper
     result
 
   # Return info for a given node in the DOM
-  getInfoForNode: (node) -> @getInfoForPath @getPathTo node
+  getInfoForNode: (node) ->
+    unless node?
+      throw new Error "Called getInfoForNode(node) with null node!"
+    @getInfoForPath @getPathTo node
 
   # Get the matching DOM elements for a given set of charRanges
   # (Calles getMappingsForCharRange for each element in the givenl ist)
@@ -384,6 +387,8 @@ class window.DomTextMapper
   getPathTo: (node) ->
     xpath = '';
     while node != @rootNode
+      unless node?
+        throw new Error "Called getPathTo on a node which was not a descendant of @rootNode. " + @rootNode
       xpath = (@getPathSegment node) + '/' + xpath
       node = node.parentNode
     xpath = (if @rootNode.ownerDocument? then './' else '/') + xpath
@@ -612,8 +617,7 @@ class window.DomTextMapper
   # Returns:
   #    the first character offset position in the content of this node's
   #    parent node that is not accounted for by this node
-  collectPositions: (node, path, parentContent = null,
-      parentIndex = 0, index = 0) ->
+  collectPositions: (node, path, parentContent = null, parentIndex = 0, index = 0) ->
 #    console.log "Scanning path " + path    
 #    content = @getNodeContent node, false
 

@@ -98,7 +98,7 @@ class window.DomTextMapper
     task = node: @pathStartNode, path: pathStart
     @finishTraverse task, onProgress, =>
       t1 = @timestamp()
-      console.log "Phase I (Path traversal) took " + (t1 - startTime) + " ms."
+#      console.log "Phase I (Path traversal) took " + (t1 - startTime) + " ms."
 
       node = @path[pathStart].node
       @collectPositions node, pathStart, null, 0, 0
@@ -107,7 +107,7 @@ class window.DomTextMapper
 #      console.log "Corpus is: " + @corpus
 
       t2 = @timestamp()    
-      console.log "Phase II (offset calculation) took " + (t2 - t1) + " ms."
+#      console.log "Phase II (offset calculation) took " + (t2 - t1) + " ms."
 
       onFinished @path
 

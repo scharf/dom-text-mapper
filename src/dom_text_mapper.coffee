@@ -1,10 +1,8 @@
 class window.DomTextMapper
 
-  USE_THEAD_TBODY_WORKAROUND = true
   USE_TABLE_TEXT_WORKAROUND = true
-  USE_OL_WORKAROUND = true
-  USE_CAPTION_WORKAROUND = true
   USE_EMPTY_TEXT_WORKAROUND = true
+  SELECT_CHILDREN_INSTEAD = ["thead", "tbody", "ol", "a", "caption", "p"]
   CONTEXT_LEN = 32
   SCAN_JOB_LENGTH_MS = 100
 
@@ -93,7 +91,6 @@ class window.DomTextMapper
 #    console.log "No valid cache, will have to do a scan."
     startTime = @timestamp()
     @path = {}
-
     pathStart = @getDefaultPath()
     task = node: @pathStartNode, path: pathStart
     @finishTraverse task, onProgress, =>
@@ -201,7 +198,10 @@ class window.DomTextMapper
     result
 
   # Return info for a given node in the DOM
-  getInfoForNode: (node) -> @getInfoForPath @getPathTo node
+  getInfoForNode: (node) ->
+    unless node?
+      throw new Error "Called getInfoForNode(node) with null node!"
+    @getInfoForPath @getPathTo node
 
   # Get the matching DOM elements for a given set of charRanges
   # (Calles getMappingsForCharRange for each element in the givenl ist)
@@ -393,7 +393,9 @@ class window.DomTextMapper
   getPathTo: (node) ->
     xpath = '';
     while node != @rootNode
-      xpath = (@getPathSegment node) + "/" + xpath
+      unless node?
+        throw new Error "Called getPathTo on a node which was not a descendant of @rootNode. " + @rootNode
+      xpath = (@getPathSegment node) + '/' + xpath
       node = node.parentNode
     xpath = (if @rootNode.ownerDocument? then './' else '/') + xpath
     xpath = xpath.replace /\/$/, ''
@@ -406,10 +408,7 @@ class window.DomTextMapper
     path = task.path
     invisiable = task.invisible ? false
     verbose  = task.verbose ? false
-#    console.log "Executing traverse task for path " + path
-
-    # Step one: get rendered node content, and store path info,
-    # if there is valuable content
+    @underTraverse = path
     cont = @getNodeContent node, false
     @path[path] =
       path: path
@@ -534,7 +533,9 @@ class window.DomTextMapper
 
   # Select the given node (for visual identification),
   # and optionally scroll to it
-  selectNode: (node, scroll = false) ->  
+  selectNode: (node, scroll = false) ->
+    unless node?
+      throw new Error "Called selectNode with null node!"
     sel = @rootWin.getSelection()
 
     # clear the selection
@@ -555,13 +556,10 @@ class window.DomTextMapper
     # do various other things. See bellow.
 
     if node.nodeType is Node.ELEMENT_NODE and node.hasChildNodes() and
-        ((USE_THEAD_TBODY_WORKAROUND and node.tagName.toLowerCase() in
-          ["thead", "tbody"]) or
-        (USE_OL_WORKAROUND and node.tagName.toLowerCase() is "ol") or
-        (USE_CAPTION_WORKAROUND and node.tagName.toLowerCase() is "caption"))
-      # This is a thead or a tbody, and selection those is problematic,
+        node.tagName.toLowerCase() in SELECT_CHILDREN_INSTEAD
+      # This is an element where direct selection sometimes fails,
       # because if the WebKit bug.
-      # (Sometimes it selects nothing, sometimes it selects the whole table.)
+      # (Sometimes it selects nothing, sometimes it selects something wrong.)
       # So we select directly the children instead.
       children = node.childNodes
       realRange.setStartBefore children[0]
@@ -585,12 +583,18 @@ class window.DomTextMapper
           # If this is the case, then it's OK.
           unless USE_EMPTY_TEXT_WORKAROUND and @isWhitespace node
             # No, this is not the case. Then this is an error.
-            throw exception
+            console.log "Warning: failed to scan element @ " + @underTraverse
+            console.log "Content is: " + node.innerHTML
+            console.log "We won't be able to properly anchor to any text inside this element."
+#            throw exception
     if scroll
       sn = node
-      while not sn.scrollIntoViewIfNeeded?
+      while sn? and not sn.scrollIntoViewIfNeeded?
         sn = sn.parentNode
-      sn.scrollIntoViewIfNeeded()
+      if sn?
+        sn.scrollIntoViewIfNeeded()
+      else
+        console.log "Failed to scroll to element. (Browser does not support scrollIntoViewIfNeeded?)"
     sel
 
   # Read and convert the text of the current selection.
@@ -681,8 +685,7 @@ class window.DomTextMapper
   # Returns:
   #    the first character offset position in the content of this node's
   #    parent node that is not accounted for by this node
-  collectPositions: (node, path, parentContent = null,
-      parentIndex = 0, index = 0) ->
+  collectPositions: (node, path, parentContent = null, parentIndex = 0, index = 0) ->
 #    console.log "Scanning path " + path    
 #    content = @getNodeContent node, false
 
@@ -740,4 +743,13 @@ class window.DomTextMapper
 
   # Decides whether a given node is a text node that only contains whitespace
   isWhitespace: (node) ->
-    node.nodeType is Node.TEXT_NODE and WHITESPACE.test node.data
+    result = switch node.nodeType
+      when Node.TEXT_NODE
+        WHITESPACE.test node.data
+      when Node.ELEMENT_NODE
+        mightBeEmpty = true
+        for child in node.childNodes
+          mightBeEmpty = mightBeEmpty and @isWhitespace child
+        mightBeEmpty
+      else false
+    result

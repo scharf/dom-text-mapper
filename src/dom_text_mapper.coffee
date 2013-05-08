@@ -405,10 +405,13 @@ class window.DomTextMapper
   # about a node, and generating further tasks for it's child nodes.
   executeTraverseTask: (task) ->
     node = task.node
-    path = task.path
+    @underTraverse = path = task.path
     invisiable = task.invisible ? false
     verbose  = task.verbose ? false
-    @underTraverse = path
+#    console.log "Executing traverse task for path " + path
+
+    # Step one: get rendered node content, and store path info,
+    # if there is valuable content
     cont = @getNodeContent node, false
     @path[path] =
       path: path

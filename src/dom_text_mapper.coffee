@@ -70,7 +70,7 @@ class window.DomTextMapper
     @lastDOMChange = @timestamp()
 #    console.log "Registered document change."
 
-  # Scan the document
+  # Scan the document - Sync version
   #
   # Traverses the DOM, collects various information, and
   # creates mappings between the string indices
@@ -82,19 +82,59 @@ class window.DomTextMapper
   #   node: reference to the DOM node
   #   content: the text content of the node, as rendered by the browser
   #   length: the length of the next content
-  scan: (onProgress, onFinished) ->
+  scanSync: ->
     if @domStableSince @lastScanned
       # We have a valid paths structure!
 #      console.log "We have a valid DOM structure cache."
-      onFinished @path
+      return @path
 
 #    console.log "No valid cache, will have to do a scan."
     startTime = @timestamp()
     @path = {}
     pathStart = @getDefaultPath()
     task = node: @pathStartNode, path: pathStart
-    @finishTraverse task, onProgress, =>
-      t1 = @timestamp()
+    @finishTraverseSync task
+    t1 = @timestamp()
+    console.log "Phase I (Path traversal) took " + (t1 - startTime) + " ms."
+
+    node = @path[pathStart].node
+    @collectPositions node, pathStart, null, 0, 0
+    @lastScanned = @timestamp()
+    @corpus = @path[pathStart].content
+#    console.log "Corpus is: " + @corpus
+
+    t2 = @timestamp()    
+    console.log "Phase II (offset calculation) took " + (t2 - t1) + " ms."
+
+    @path
+
+    null
+
+  # Scan the document - sync version
+  #
+  # Traverses the DOM, collects various information, and
+  # creates mappings between the string indices
+  # (as appearing in the rendered text) and the DOM elements.  
+  # 
+  # An map is returned, where the keys are the paths, and the
+  # values are objects with info about those parts of the DOM.
+  #   path: the valid path value
+  #   node: reference to the DOM node
+  #   content: the text content of the node, as rendered by the browser
+  #   length: the length of the next content
+  scanAsync: (onProgress, onFinished) ->
+    if @domStableSince @lastScanned
+      # We have a valid paths structure!
+#      console.log "We have a valid DOM structure cache."
+      onFinished @path
+
+#    console.log "No valid cache, will have to do a scan."
+#    startTime = @timestamp()
+    @path = {}
+    pathStart = @getDefaultPath()
+    task = node: @pathStartNode, path: pathStart
+    @finishTraverseAsync task, onProgress, =>
+#      t1 = @timestamp()
 #      console.log "Phase I (Path traversal) took " + (t1 - startTime) + " ms."
 
       node = @path[pathStart].node
@@ -103,7 +143,7 @@ class window.DomTextMapper
       @corpus = @path[pathStart].content
 #      console.log "Corpus is: " + @corpus
 
-      t2 = @timestamp()    
+#      t2 = @timestamp()    
 #      console.log "Phase II (offset calculation) took " + (t2 - t1) + " ms."
 
       onFinished @path
@@ -148,7 +188,7 @@ class window.DomTextMapper
         delete @path[p]        
 
       task = path:path, node: node
-      @finishTraverse task, null, =>
+      @finishTraverseAsync task, null, =>
 #        console.log "Done. Collecting new path info..."
 
 #        console.log "Done. Updating mappings..."
@@ -443,6 +483,7 @@ class window.DomTextMapper
           verbose: verbose
     null
 
+
   # Run a round of DOM traverse tasks, and schedule the next one
   runTraverseRounds: ->
     try
@@ -482,7 +523,23 @@ class window.DomTextMapper
         
   # Execute an full DOM traverse compaign,
   # starting with the given task.
-  finishTraverse: (rootTask, onProgress, onFinished) ->
+  finishTraverseSync: (rootTask) ->
+    if @traverseTasks? and @traverseTasks.size
+      throw new Error "Error: a DOM traverse is already in progress!"
+    @traverseTasks = []
+    @saveSelection()
+    @executeTraverseTask rootTask
+
+    @traverseTotalLength = @path[rootTask.path].length
+    @traverseCoveredChars = 0
+
+    while @traverseTasks.length
+      @executeTraverseTask @traverseTasks.pop()
+    @restoreSelection()
+
+  # Execute an full DOM traverse compaign,
+  # starting with the given task.
+  finishTraverseAsync: (rootTask, onProgress, onFinished) ->
     if @traverseTasks? and @traverseTasks.size
       throw new Error "Error: a DOM traverse is already in progress!"
     @traverseTasks = []

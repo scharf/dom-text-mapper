@@ -754,6 +754,14 @@ class window.DomTextMapper
 #    content = @getNodeContent node, false
 
     pathInfo = @path[path]
+    unless pathInfo?
+#      throw new Error "Error: I have no info about " + path + ". This should not happen."
+      console.log "Warning: have no info about this node:"
+      console.log node
+      console.log "This probably was _not_ here last time."
+      console.log "Expect problems."
+      return index
+
     content = pathInfo?.content
 
     if not content? or content is ""

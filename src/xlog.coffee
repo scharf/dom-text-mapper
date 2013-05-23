@@ -1,6 +1,6 @@
 # Rudementary logging stuff
 
-window.XLOG_LEVEL ?=
+window.XLOG_LEVEL =
   ERROR: 5
   WARN: 4
   INFO: 3
@@ -11,9 +11,12 @@ class XLogger
 
   constructor: (name) ->
     @name = name
-    @level = XLOG_LEVEL.INFO
+    this.setLevel XLOG_LEVEL.INFO
 
-  setLevel: (level) -> @level = level
+  setLevel: (level) ->
+    unless level?
+      throw new Error "Setting undefined level!"    
+    @level = level
 
   currentTimestamp: -> new Date().getTime()
 

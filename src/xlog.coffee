@@ -1,4 +1,11 @@
-# Rudementary logging stuff
+# Rudementary logging framework
+# to be used in
+#  * dom-text-mapper
+#  * dom-text-matcher
+#  * Annotator
+#  * Hypothes.is
+#
+# (And whatever else who finds it useful.)
 
 window.XLOG_LEVEL =
   ERROR: 5

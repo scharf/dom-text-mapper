@@ -21,18 +21,23 @@ class XLogger
 
   time: -> "[" + @elapsedTime() + " ms]"
 
-  log: (level, message) ->
+  _log: (level, objects) ->
     if level >= @level
-      lines = (JSON.stringify message, null, 2).split "\n"
       time = @time()
-      for line in lines
-        console.log time + " '" + @name + "': " + line
+      for obj in objects
+        text = if obj instanceof Error
+          obj.stack
+        else
+          JSON.stringify obj, null, 2
+        lines = text.split "\n"
+        for line in lines
+          console.log time + " '" + @name + "': " + line
 
-  error: (message) -> this.log XLOG_LEVEL.ERROR, message
-  warn: (message) -> this.log XLOG_LEVEL.WARN, message
-  info: (message) -> this.log XLOG_LEVEL.INFO, message
-  debug: (message) -> this.log XLOG_LEVEL.DEBUG, message
-  trace: (message) -> this.log XLOG_LEVEL.TRACE, message
+  error: (objects...) -> this._log XLOG_LEVEL.ERROR, objects
+  warn: (objects...) -> this._log XLOG_LEVEL.WARN, objects
+  info: (objects...) -> this._log XLOG_LEVEL.INFO, objects
+  debug: (objects...) -> this._log XLOG_LEVEL.DEBUG, objects
+  trace: (objects...) -> this._log XLOG_LEVEL.TRACE, objects
 
 window.loggerStartTime = new Date().getTime()
 

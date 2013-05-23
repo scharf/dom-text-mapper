@@ -23,7 +23,10 @@ class XLogger
 
   log: (level, message) ->
     if level >= @level
-      console.log @time() + " '" + @name + "': " + message
+      lines = (JSON.stringify message, null, 2).split "\n"
+      time = @time()
+      for line in lines
+        console.log time + " '" + @name + "': " + line
 
   error: (message) -> this.log XLOG_LEVEL.ERROR, message
   warn: (message) -> this.log XLOG_LEVEL.WARN, message

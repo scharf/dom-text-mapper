@@ -7,16 +7,18 @@ class window.DomTextMapper
   SCAN_JOB_LENGTH_MS = 100
 
   @instances: []
+  @log: getXLogger "d-t-m"
 
   @changed: (node, reason = "no reason") ->
     if @instances.length is 0 then return
-#    dm = @instances[0]
-#    console.log "Node @ " + (dm.getPathTo node) + " has changed: " + reason
+    dm = @instances[0]
+    @log.debug "Node @ " + (dm.getPathTo node) + " has changed: " + reason
     for instance in @instances
       instance.performSyncUpdateOnNode node
     null
 
   constructor: ->
+    @log = getXLogger "d-t-m instance"
     @setRealRoot()
     window.DomTextMapper.instances.push this
 
@@ -68,7 +70,7 @@ class window.DomTextMapper
   # anythime, and therefore will not assume any stability.
   documentChanged: ->
     @lastDOMChange = @timestamp()
-#    console.log "Registered document change."
+    @log.debug "Registered document change."
 
   # Scan the document - Sync version
   #
@@ -85,10 +87,10 @@ class window.DomTextMapper
   scanSync: ->
     if @domStableSince @lastScanned
       # We have a valid paths structure!
-#      console.log "We have a valid DOM structure cache."
+      @log.debug "We have a valid DOM structure cache. Not scanning."
       return @path
 
-#    console.log "No valid cache, will have to do a scan."
+    @log.debug "No valid cache, will have to do a scan."
     startTime = @timestamp()
     @path = {}
     pathStart = @getDefaultPath()
@@ -97,7 +99,7 @@ class window.DomTextMapper
     @finishTraverseSync task
     @restoreSelection()
     t1 = @timestamp()
-    console.log "Phase I (Path traversal) took " + (t1 - startTime) + " ms."
+    @log.info "Phase I (Path traversal) took " + (t1 - startTime) + " ms."
 
     node = @path[pathStart].node
     @collectPositions node, pathStart, null, 0, 0
@@ -106,7 +108,7 @@ class window.DomTextMapper
 #    console.log "Corpus is: " + @corpus
 
     t2 = @timestamp()    
-    console.log "Phase II (offset calculation) took " + (t2 - t1) + " ms."
+    @log.info "Phase II (offset calculation) took " + (t2 - t1) + " ms."
 
     @path
 
@@ -127,11 +129,11 @@ class window.DomTextMapper
   scanAsync: (onProgress, onFinished) ->
     if @domStableSince @lastScanned
       # We have a valid paths structure!
-#      console.log "We have a valid DOM structure cache."
+      @log.debug "We have a valid DOM structure cache. Not scanning."
       onFinished @path
 
-#    console.log "No valid cache, will have to do a scan."
-#    startTime = @timestamp()
+    @log.debug "No valid cache, will have to do a scan."
+    startTime = @timestamp()
     @path = {}
     pathStart = @getDefaultPath()
     task = node: @pathStartNode, path: pathStart
@@ -175,7 +177,8 @@ class window.DomTextMapper
       @performSyncUpdateOnNode node.parentNode, true
       unless escalating then @restoreSelection()        
       return
-#    console.log "Performing update on node @ path " + path
+
+    @log.debug "Performing update on node @ path " + path
 
 #    if escalating then console.log "(Escalated)"
 #    console.log "Updating data about " + path + ": "

@@ -27,7 +27,11 @@ class XLogger
 
   currentTimestamp: -> new Date().getTime()
 
-  elapsedTime: -> @currentTimestamp() - window.loggerStartTime
+  elapsedTime: ->
+    if XLoggerStartTime?
+      @currentTimestamp() - XLoggerStartTime
+    else
+      "???"
 
   time: -> "[" + @elapsedTime() + " ms]"
 
@@ -49,6 +53,6 @@ class XLogger
   debug: (objects...) -> this._log XLOG_LEVEL.DEBUG, objects
   trace: (objects...) -> this._log XLOG_LEVEL.TRACE, objects
 
-window.loggerStartTime = new Date().getTime()
+window.XLoggerStartTime ?= new Date().getTime()
 
 window.getXLogger ?= (name) -> new XLogger(name)

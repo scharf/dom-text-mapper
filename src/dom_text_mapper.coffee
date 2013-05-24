@@ -105,7 +105,6 @@ class window.DomTextMapper
     @collectPositions node, pathStart, null, 0, 0
     @lastScanned = @timestamp()
     @corpus = @path[pathStart].content
-#    console.log "Corpus is: " + @corpus
 
     t2 = @timestamp()    
     @log.info "Phase II (offset calculation) took " + (t2 - t1) + " ms."
@@ -139,16 +138,16 @@ class window.DomTextMapper
     task = node: @pathStartNode, path: pathStart
     @finishTraverseAsync task, onProgress, =>
 #      t1 = @timestamp()
-#      console.log "Phase I (Path traversal) took " + (t1 - startTime) + " ms."
+#      @log.info "Phase I (Path traversal) took " + (t1 - startTime) + " ms."
 
       node = @path[pathStart].node
       @collectPositions node, pathStart, null, 0, 0
       @lastScanned = @timestamp()
       @corpus = @path[pathStart].content
-#      console.log "Corpus is: " + @corpus
+#      @log.trace "Corpus is: " + @corpus
 
 #      t2 = @timestamp()    
-#      console.log "Phase II (offset calculation) took " + (t2 - t1) + " ms."
+#      @log.info "Phase II (offset calculation) took " + (t2 - t1) + " ms."
 
       onFinished @path
 

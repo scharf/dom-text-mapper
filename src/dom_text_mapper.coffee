@@ -45,7 +45,7 @@ class window.DomTextMapper
       throw new Error "Can't find iframe with specified ID!"
     @rootWin = iframe.contentWindow
     unless @rootWin?
-      throw new Error "Can't access contents of the spefified iframe!"
+      throw new Error "Can't access contents of the specified iframe!"
     @rootNode = @rootWin.document
     @pathStartNode = @getBody()
 

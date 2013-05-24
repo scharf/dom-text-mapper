@@ -39,7 +39,9 @@ class XLogger
     if level >= @level
       time = @time()
       for obj in objects
-        text = if obj instanceof Error
+        text = unless obj?
+          "null"
+        else if obj instanceof Error
           obj.stack
         else
           JSON.stringify obj, null, 2

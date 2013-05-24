@@ -13,7 +13,7 @@ class window.DomTextMapper
     if @instances.length is 0 then return
     dm = @instances[0]
     @log.debug "Node @ " + (dm.getPathTo node) + " has changed: " + reason
-    for instance in @instances
+    for instance in @instances when instance.rootNode.contains(node)
       instance.performSyncUpdateOnNode node
     null
 
@@ -90,7 +90,12 @@ class window.DomTextMapper
       @log.debug "We have a valid DOM structure cache. Not scanning."
       return @path
 
+    unless @pathStartNode.ownerDocument.body.contains @pathStartNode
+      @log.debug "We cannot map nodes that are not attached."
+      return @path
+
     @log.debug "No valid cache, will have to do a scan."
+
     startTime = @timestamp()
     @path = {}
     pathStart = @getDefaultPath()

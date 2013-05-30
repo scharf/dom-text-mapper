@@ -95,6 +95,7 @@ class window.DomTextMapper
       return @path
 
     @log.debug "No valid cache, will have to do a scan."
+    @documentChanged()
 
     startTime = @timestamp()
     @path = {}
@@ -137,6 +138,8 @@ class window.DomTextMapper
       onFinished @path
 
     @log.debug "No valid cache, will have to do a scan."
+    @documentChanged()
+
     startTime = @timestamp()
     @path = {}
     pathStart = @getDefaultPath()

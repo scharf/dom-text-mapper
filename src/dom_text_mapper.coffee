@@ -361,9 +361,8 @@ class window.DomTextMapper
 
     if mappings.length is 0
       throw new Error "No mappings found for [" + start + ":" + end + "]!"
-
-    mappings = mappings.sort (a, b) -> a.element.start - b.element.star
-t
+    # Sort the mappings according to start offset
+    mappings = mappings.sort (a, b) -> a.element.start - b.element.start
 
     # Create a DOM range object
     @log.trace "Building range..."

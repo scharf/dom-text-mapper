@@ -362,7 +362,6 @@ class window.DomTextMapper
     if mappings.length is 0
       throw new Error "No mappings found for [" + start + ":" + end + "]!"
 
-        
     # Create a DOM range object
     @log.trace "Building range..."
     r = @rootWin.document.createRange()
@@ -686,11 +685,10 @@ class window.DomTextMapper
   # Convert "display" text indices to "source" text indices.
   computeSourcePositions: (match) ->
     @log.trace "In computeSourcePosition"
-    @log.trace match.element.path
-    @log.trace match.element.node.data
+    @log.trace "Path is '" + match.element.path + "'"
+    @log.trace "Node data is: ", match.element.node.data
 
     # the HTML source of the text inside a text element.
-    @log.trace "Calculating source position at " + match.element.path
     sourceText = match.element.node.data.replace /\n/g, " "
     @log.trace "sourceText is '" + sourceText + "'"
 
@@ -713,6 +711,8 @@ class window.DomTextMapper
     displayIndex = 0
 
     until sourceStart? and sourceEnd?
+      if sourceIndex is sourceText.length
+        throw new Error "Error! This node (at '" + match.element.path + "') looks different compared to what I remember! Maybe the document was updated, but d-t-m was not notified?"
       sc = sourceText[sourceIndex]
       dc = displayText[displayIndex]
       if sc is dc

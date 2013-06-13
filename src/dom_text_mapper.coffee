@@ -269,7 +269,9 @@ class window.DomTextMapper
 
   # Return the rendered value of a part of the dom.
   # If path is not given, the default path is used.
-  getContentForPath: (path = null) -> 
+  getContentForPath: (path = null) ->
+    unless @path?
+      throw new Error "Can't get info before running a scan() !"
     path ?= @getDefaultPath()       
     @path[path].content
 

@@ -44,7 +44,13 @@ class XLogger
         else if obj instanceof Error
           obj.stack
         else
-          JSON.stringify obj, null, 2
+          try
+            result = JSON.stringify obj, null, 2
+          catch exception # If it's circular
+            console.log obj
+            result = "<SEE ABOVE>" #@stringify obj
+          result
+        
         lines = text.split "\n"
         for line in lines
           console.log time + " '" + @name + "': " + line

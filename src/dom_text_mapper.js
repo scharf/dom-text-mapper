@@ -17,7 +17,7 @@
 
     DomTextMapper.instances = [];
 
-    DomTextMapper.log = getXLogger("DomTextMapper class");
+    DomTextMapper.log = console;
 
     DomTextMapper.changed = function(node, reason) {
       var dm, instance, _i, _len, _ref;
@@ -40,7 +40,7 @@
     };
 
     function DomTextMapper(name) {
-      this.log = getXLogger(name != null ? name : "dom-text-mapper");
+      this.log = console;
       this.setRealRoot();
       DomTextMapper.instances.push(this);
     }
@@ -186,10 +186,10 @@
       if (escalating) {
         this.log.debug("(Escalated)");
       }
-      this.log.trace("Updating data about " + path + ": ");
+      this.log.debug("Updating data about " + path + ": ");
       if (pathInfo.node === node && pathInfo.content === this.getNodeContent(node, false)) {
-        this.log.trace("Good, the node and the overall content is still the same");
-        this.log.trace("Dropping obsolete path info for children...");
+        this.log.debug("Good, the node and the overall content is still the same");
+        this.log.debug("Dropping obsolete path info for children...");
         prefix = path + "/";
         pathsToDrop = p;
         pathsToDrop = [];
@@ -209,7 +209,7 @@
           node: node
         };
         this.finishTraverseSync(task);
-        this.log.trace("Done. Collecting new path info...");
+        this.log.debug("Done. Collecting new path info...");
         if (pathInfo.node === this.pathStartNode) {
           this.log.debug("Ended up rescanning the whole doc.");
           this.collectPositions(node, path, null, 0, 0);
@@ -224,10 +224,10 @@
         }
         this.log.debug("Data update took " + (this.timestamp() - startTime) + " ms.");
       } else {
-        this.log.trace("Hm..node has been replaced, or overall content has changed!");
+        this.log.debug("Hm..node has been replaced, or overall content has changed!");
         if (pathInfo.node !== this.pathStartNode) {
-          this.log.trace("I guess I must go up one level.");
-          parentNode = node.parentNode != null ? (this.log.trace("Node has parent, using that."), node.parentNode) : (parentPath = this.parentPath(path), this.log.trace("Node has no parent, will look up " + parentPath), this.lookUpNode(parentPath));
+          this.log.debug("I guess I must go up one level.");
+          parentNode = node.parentNode != null ? (this.log.debug("Node has parent, using that."), node.parentNode) : (parentPath = this.parentPath(path), this.log.debug("Node has no parent, will look up " + parentPath), this.lookUpNode(parentPath));
           this.performSyncUpdateOnNode(parentNode, true);
         } else {
           throw new Error("Can not keep up with the changes, since even the node configured as path start node was replaced.");
@@ -324,11 +324,11 @@
       if (!((start != null) && (end != null))) {
         throw new Error("start and end is required!");
       }
-      this.log.trace("Collecting nodes for [" + start + ":" + end + "]");
+      this.log.debug("Collecting nodes for [" + start + ":" + end + "]");
       if (!this.domStableSince(this.lastScanned)) {
         throw new Error("Can not get mappings, since the dom has changed since last scanned. Call scan first.");
       }
-      this.log.trace("Collecting mappings");
+      this.log.debug("Collecting mappings");
       mappings = [];
       _ref = this.path;
       for (p in _ref) {
@@ -336,8 +336,8 @@
         if (info.atomic && this.regions_overlap(info.start, info.end, start, end)) {
           (function(info) {
             var full, mapping;
-            _this.log.trace("Checking " + info.path);
-            _this.log.trace(info);
+            _this.log.debug("Checking " + info.path);
+            _this.log.debug(info);
             mapping = {
               element: info
             };
@@ -378,7 +378,7 @@
               }
             }
             mappings.push(mapping);
-            return _this.log.trace("Done with " + info.path);
+            return _this.log.debug("Done with " + info.path);
           })(info);
         }
       }
@@ -388,7 +388,7 @@
       mappings = mappings.sort(function(a, b) {
         return a.element.start - b.element.start;
       });
-      this.log.trace("Building range...");
+      this.log.debug("Building range...");
       r = this.rootWin.document.createRange();
       startMapping = mappings[0];
       startNode = startMapping.element.node;
@@ -425,7 +425,7 @@
         },
         safeParent: r.commonAncestorContainer
       };
-      this.log.trace("Done collecting");
+      this.log.debug("Done collecting");
       return result;
     };
 
@@ -513,7 +513,7 @@
       this.underTraverse = path = task.path;
       invisiable = (_ref = task.invisible) != null ? _ref : false;
       verbose = (_ref1 = task.verbose) != null ? _ref1 : false;
-      this.log.trace("Executing traverse task for path " + path);
+      this.log.debug("Executing traverse task for path " + path);
       cont = this.getNodeContent(node, false);
       this.path[path] = {
         path: path,
@@ -525,7 +525,7 @@
         if (verbose) {
           this.log.info("Collected info about path " + path);
         } else {
-          this.log.trace("Collected info about path " + path);
+          this.log.debug("Collected info about path " + path);
         }
         if (invisible) {
           this.log.warn("Something seems to be wrong. I see visible content @ " + path + ", while some of the ancestor nodes reported empty contents." + " Probably a new selection API bug....");
@@ -534,7 +534,7 @@
         if (verbose) {
           this.log.info("Found no content at path " + path);
         } else {
-          this.log.trace("Found no content at path " + path);
+          this.log.debug("Found no content at path " + path);
         }
         invisible = true;
       }
@@ -561,14 +561,14 @@
         roundStart = this.timestamp();
         tasksDone = 0;
         while (this.traverseTasks.length && (this.timestamp() - roundStart < SCAN_JOB_LENGTH_MS)) {
-          this.log.trace("Queue length is: " + this.traverseTasks.length);
+          this.log.debug("Queue length is: " + this.traverseTasks.length);
           task = this.traverseTasks.pop();
           this.executeTraverseTask(task);
           tasksDone += 1;
           if (!task.node.hasChildNodes()) {
             this.traverseCoveredChars += this.path[task.path].length;
           }
-          this.log.trace("Round covered " + tasksDone + " tasks " + "in " + (this.timestamp() - roundStart) + " ms." + " Covered chars: " + this.traverseCoveredChars);
+          this.log.debug("Round covered " + tasksDone + " tasks " + "in " + (this.timestamp() - roundStart) + " ms." + " Covered chars: " + this.traverseCoveredChars);
         }
         this.restoreSelection();
         if (this.traverseOnProgress != null) {
@@ -661,7 +661,7 @@
 
     DomTextMapper.prototype.restoreSelection = function() {
       var range, sel, _i, _len, _ref;
-      this.log.trace("Restoring selection: " + this.savedSelection.length + " ranges.");
+      this.log.debug("Restoring selection: " + this.savedSelection.length + " ranges.");
       if (this.savedSelection == null) {
         throw new Error("No selection to restore.");
       }
@@ -746,16 +746,16 @@
 
     DomTextMapper.prototype.computeSourcePositions = function(match) {
       var dc, displayEnd, displayIndex, displayStart, displayText, sc, sourceEnd, sourceIndex, sourceStart, sourceText;
-      this.log.trace("In computeSourcePosition");
-      this.log.trace("Path is '" + match.element.path + "'");
-      this.log.trace("Node data is: ", match.element.node.data);
+      this.log.debug("In computeSourcePosition");
+      this.log.debug("Path is '" + match.element.path + "'");
+      this.log.debug("Node data is: ", match.element.node.data);
       sourceText = match.element.node.data.replace(/\n/g, " ");
-      this.log.trace("sourceText is '" + sourceText + "'");
+      this.log.debug("sourceText is '" + sourceText + "'");
       displayText = match.element.content;
-      this.log.trace("displayText is '" + displayText + "'");
+      this.log.debug("displayText is '" + displayText + "'");
       displayStart = match.start != null ? match.start : 0;
       displayEnd = match.end != null ? match.end : displayText.length;
-      this.log.trace("Display charRange is: " + displayStart + "-" + displayEnd);
+      this.log.debug("Display charRange is: " + displayStart + "-" + displayEnd);
       if (displayEnd === 0) {
         match.startCorrected = 0;
         match.endCorrected = 0;
@@ -782,7 +782,7 @@
       }
       match.startCorrected = sourceStart;
       match.endCorrected = sourceEnd;
-      this.log.trace("computeSourcePosition done. Corrected charRange is: " + match.startCorrected + "-" + match.endCorrected);
+      this.log.debug("computeSourcePosition done. Corrected charRange is: " + match.startCorrected + "-" + match.endCorrected);
       return null;
     };
 
@@ -804,7 +804,7 @@
       if (index == null) {
         index = 0;
       }
-      this.log.trace("Scanning path " + path);
+      this.log.debug("Scanning path " + path);
       pathInfo = this.path[path];
       if (pathInfo == null) {
         this.log.error("I have no info about " + path + ". This should not happen.");
@@ -822,7 +822,7 @@
       }
       startIndex = parentContent != null ? parentContent.indexOf(content, index) : index;
       if (startIndex === -1) {
-        this.log.trace("Content of this not is not present in content of parent, " + "at path " + path);
+        this.log.debug("Content of this not is not present in content of parent, " + "at path " + path);
         return index;
       }
       endIndex = startIndex + content.length;

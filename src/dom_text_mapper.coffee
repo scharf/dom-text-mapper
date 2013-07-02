@@ -7,7 +7,7 @@ class window.DomTextMapper
   SCAN_JOB_LENGTH_MS = 100
 
   @instances: []
-  @log = getXLogger ("DomTextMapper class")
+  @log = console
 
   @changed: (node, reason = "no reason") ->
     if @instances.length is 0 then return
@@ -18,7 +18,7 @@ class window.DomTextMapper
     null
 
   constructor: (name) ->
-    @log = getXLogger (name ? "dom-text-mapper")
+    @log = console
     @setRealRoot()
     DomTextMapper.instances.push this
 
@@ -152,7 +152,7 @@ class window.DomTextMapper
       @collectPositions node, pathStart, null, 0, 0
       @lastScanned = @timestamp()
       @corpus = @path[pathStart].content
-#      @log.trace "Corpus is: " + @corpus
+#      @log.debug "Corpus is: " + @corpus
 
 #      t2 = @timestamp()    
 #      @log.info "Phase II (offset calculation) took " + (t2 - t1) + " ms."
@@ -188,10 +188,10 @@ class window.DomTextMapper
     @log.debug "Performing update on node @ path " + path
 
     if escalating then @log.debug "(Escalated)"
-    @log.trace "Updating data about " + path + ": "
+    @log.debug "Updating data about " + path + ": "
     if pathInfo.node is node and pathInfo.content is @getNodeContent node, false
-      @log.trace "Good, the node and the overall content is still the same"
-      @log.trace "Dropping obsolete path info for children..."
+      @log.debug "Good, the node and the overall content is still the same"
+      @log.debug "Dropping obsolete path info for children..."
       prefix = path + "/"
       pathsToDrop =p
 
@@ -205,7 +205,7 @@ class window.DomTextMapper
       task = path:path, node: node
       @finishTraverseSync task
 
-      @log.trace "Done. Collecting new path info..."
+      @log.debug "Done. Collecting new path info..."
 
       if pathInfo.node is @pathStartNode
         @log.debug "Ended up rescanning the whole doc."
@@ -227,15 +227,15 @@ class window.DomTextMapper
       @log.debug "Data update took " + (@timestamp() - startTime) + " ms."
 
     else
-      @log.trace "Hm..node has been replaced, or overall content has changed!"
+      @log.debug "Hm..node has been replaced, or overall content has changed!"
       if pathInfo.node isnt @pathStartNode
-        @log.trace "I guess I must go up one level."
+        @log.debug "I guess I must go up one level."
         parentNode = if node.parentNode?
-          @log.trace "Node has parent, using that."
+          @log.debug "Node has parent, using that."
           node.parentNode
         else
           parentPath = @parentPath path
-          @log.trace "Node has no parent, will look up " + parentPath
+          @log.debug "Node has no parent, will look up " + parentPath
           @lookUpNode parentPath
         @performSyncUpdateOnNode parentNode, true
       else
@@ -306,18 +306,18 @@ class window.DomTextMapper
   getMappingsForCharRange: (start, end) ->
     unless (start? and end?)
       throw new Error "start and end is required!"
-    @log.trace "Collecting nodes for [" + start + ":" + end + "]"
+    @log.debug "Collecting nodes for [" + start + ":" + end + "]"
 
     unless @domStableSince @lastScanned
       throw new Error "Can not get mappings, since the dom has changed since last scanned. Call scan first."
 
-    @log.trace "Collecting mappings"
+    @log.debug "Collecting mappings"
     mappings = []
     for p, info of @path when info.atomic and
         @regions_overlap info.start, info.end, start, end
       do (info) =>
-        @log.trace "Checking " + info.path
-        @log.trace info
+        @log.debug "Checking " + info.path
+        @log.debug info
         mapping =
           element: info
 
@@ -359,7 +359,7 @@ class window.DomTextMapper
             mapping.wanted = info.content
 
         mappings.push mapping
-        @log.trace "Done with " + info.path
+        @log.debug "Done with " + info.path
 
     if mappings.length is 0
       throw new Error "No mappings found for [" + start + ":" + end + "]!"
@@ -367,7 +367,7 @@ class window.DomTextMapper
     mappings = mappings.sort (a, b) -> a.element.start - b.element.start
 
     # Create a DOM range object
-    @log.trace "Building range..."
+    @log.debug "Building range..."
     r = @rootWin.document.createRange()
     startMapping = mappings[0]
     startNode = startMapping.element.node
@@ -403,7 +403,7 @@ class window.DomTextMapper
         endInfo: endInfo
       safeParent: r.commonAncestorContainer
     }
-    @log.trace "Done collecting"
+    @log.debug "Done collecting"
     result
 
   # ===== Private methods (never call from outside the module) =======
@@ -463,7 +463,7 @@ class window.DomTextMapper
     @underTraverse = path = task.path
     invisiable = task.invisible ? false
     verbose  = task.verbose ? false
-    @log.trace "Executing traverse task for path " + path
+    @log.debug "Executing traverse task for path " + path
 
     # Step one: get rendered node content, and store path info,
     # if there is valuable content
@@ -477,7 +477,7 @@ class window.DomTextMapper
       if verbose
         @log.info "Collected info about path " + path
       else
-        @log.trace "Collected info about path " + path
+        @log.debug "Collected info about path " + path
       if invisible
         @log.warn "Something seems to be wrong. I see visible content @ " +
             path + ", while some of the ancestor nodes reported empty contents." +
@@ -487,7 +487,7 @@ class window.DomTextMapper
       if verbose
         @log.info "Found no content at path " + path
       else
-        @log.trace "Found no content at path " + path
+        @log.debug "Found no content at path " + path
       invisible = true
 
     # Step two: cover all children.
@@ -512,7 +512,7 @@ class window.DomTextMapper
       roundStart = @timestamp()
       tasksDone = 0
       while @traverseTasks.length and (@timestamp() - roundStart < SCAN_JOB_LENGTH_MS)
-        @log.trace "Queue length is: " + @traverseTasks.length
+        @log.debug "Queue length is: " + @traverseTasks.length
         task = @traverseTasks.pop()
         @executeTraverseTask task
         tasksDone += 1
@@ -521,7 +521,7 @@ class window.DomTextMapper
           # count the chars we have covered
           @traverseCoveredChars += @path[task.path].length
 
-        @log.trace "Round covered " + tasksDone + " tasks " +
+        @log.debug "Round covered " + tasksDone + " tasks " +
           "in " + (@timestamp() - roundStart) + " ms." +
           " Covered chars: " + @traverseCoveredChars
 
@@ -597,7 +597,7 @@ class window.DomTextMapper
 
   # restore selection
   restoreSelection: ->
-    @log.trace "Restoring selection: " + @savedSelection.length + " ranges."
+    @log.debug "Restoring selection: " + @savedSelection.length + " ranges."
     unless @savedSelection? then throw new Error "No selection to restore."
     sel = @rootWin.getSelection()
     sel.removeAllRanges()
@@ -688,22 +688,22 @@ class window.DomTextMapper
 
   # Convert "display" text indices to "source" text indices.
   computeSourcePositions: (match) ->
-    @log.trace "In computeSourcePosition"
-    @log.trace "Path is '" + match.element.path + "'"
-    @log.trace "Node data is: ", match.element.node.data
+    @log.debug "In computeSourcePosition"
+    @log.debug "Path is '" + match.element.path + "'"
+    @log.debug "Node data is: ", match.element.node.data
 
     # the HTML source of the text inside a text element.
     sourceText = match.element.node.data.replace /\n/g, " "
-    @log.trace "sourceText is '" + sourceText + "'"
+    @log.debug "sourceText is '" + sourceText + "'"
 
     # what gets displayed, when the node is processed by the browser.
     displayText = match.element.content
-    @log.trace "displayText is '" + displayText + "'"
+    @log.debug "displayText is '" + displayText + "'"
 
     # The selected charRange in displayText.
     displayStart = if match.start? then match.start else 0
     displayEnd = if match.end? then match.end else displayText.length
-    @log.trace "Display charRange is: " + displayStart + "-" + displayEnd
+    @log.debug "Display charRange is: " + displayStart + "-" + displayEnd
 
     if displayEnd is 0
       # Handle empty text nodes  
@@ -729,7 +729,7 @@ class window.DomTextMapper
       sourceIndex++
     match.startCorrected = sourceStart
     match.endCorrected = sourceEnd
-    @log.trace "computeSourcePosition done. Corrected charRange is: " +
+    @log.debug "computeSourcePosition done. Corrected charRange is: " +
       match.startCorrected + "-" + match.endCorrected
     null
 
@@ -759,7 +759,7 @@ class window.DomTextMapper
   #    the first character offset position in the content of this node's
   #    parent node that is not accounted for by this node
   collectPositions: (node, path, parentContent = null, parentIndex = 0, index = 0) ->
-    @log.trace "Scanning path " + path
+    @log.debug "Scanning path " + path
 #    content = @getNodeContent node, false
 
     pathInfo = @path[path]
@@ -786,7 +786,7 @@ class window.DomTextMapper
     if startIndex is -1
        # content of node is not present in parent's content - probably hidden,
        # or something similar
-       @log.trace "Content of this not is not present in content of parent, " +
+       @log.debug "Content of this not is not present in content of parent, " +
          "at path " + path
        return index
 

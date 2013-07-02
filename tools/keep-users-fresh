@@ -1,0 +1,4 @@
+#!/bin/sh
+cd "$(dirname "$0")"
+watch -n1 "cp -u ../src/dom_text_mapper.js ../../annotator/lib/vendor/"
+

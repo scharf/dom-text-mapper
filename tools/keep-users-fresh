@@ -2,4 +2,4 @@
 # This file only makes sense if you have the annotator repository cloned
 # to the same directory where you keep dom-text-mapper.
 cd "$(dirname "$0")"
-watch -n1 "cp -u -t ../../annotator/lib/vendor ../src/dom_text_mapper.js ../src/dom_text_mapper.map"
+watch -n1 "cp -u -t ../../annotator/lib/vendor ../src/*.js ../src/*.map; cp -u -t ../../annotator/lib/src ../src/*.coffee"

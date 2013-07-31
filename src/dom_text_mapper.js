@@ -9,7 +9,7 @@
 
     USE_EMPTY_TEXT_WORKAROUND = true;
 
-    SELECT_CHILDREN_INSTEAD = ["thead", "tbody", "ol", "a", "caption", "p", "span"];
+    SELECT_CHILDREN_INSTEAD = ["thead", "tbody", "ol", "a", "caption", "p", "span", "div", "h1", "h2", "h3", "h4", "h5", "h6", "li"];
 
     CONTEXT_LEN = 32;
 

@@ -78,10 +78,10 @@
     DomTextMapper.prototype.scan = function() {
       var node, path, startTime, t1, t2;
       if (this.domStableSince(this.lastScanned)) {
-        return this.path;
+        return;
       }
       if (!this.pathStartNode.ownerDocument.body.contains(this.pathStartNode)) {
-        return this.path;
+        return;
       }
       startTime = this.timestamp();
       this.saveSelection();
@@ -95,7 +95,7 @@
       this.lastScanned = this.timestamp();
       this.corpus = this.path[path].content;
       t2 = this.timestamp();
-      return this.path;
+      return null;
     };
 
     DomTextMapper.prototype.selectPath = function(path, scroll) {

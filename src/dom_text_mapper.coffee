@@ -417,7 +417,7 @@ class window.DomTextMapper
         console.log "Something seems to be wrong. I see visible content @ " +
             path + ", while some of the ancestor nodes reported empty contents.
  Probably a new selection API bug...."
-        
+        console.log "Anyway, text is '" + cont + "'."        
     else
       if verbose then console.log "Found no content at path " + path
       invisible = true

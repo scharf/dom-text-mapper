@@ -546,6 +546,7 @@ class window.DomTextMapper
 
     sel = @selectNode node
     text = @readSelectionText sel
+    if @postProcess? then text = @postProcess text
 
     if shouldRestoreSelection then @restoreSelection()
     text

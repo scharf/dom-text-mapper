@@ -593,6 +593,9 @@
       }
       sel = this.selectNode(node);
       text = this.readSelectionText(sel);
+      if (this.postProcess != null) {
+        text = this.postProcess(text);
+      }
       if (shouldRestoreSelection) {
         this.restoreSelection();
       }

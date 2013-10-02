@@ -5,6 +5,10 @@
   window.DomTextMapper = (function() {
     var CONTEXT_LEN, SELECT_CHILDREN_INSTEAD, USE_EMPTY_TEXT_WORKAROUND, USE_TABLE_TEXT_WORKAROUND, WHITESPACE;
 
+    DomTextMapper.applicable = function() {
+      return true;
+    };
+
     USE_TABLE_TEXT_WORKAROUND = true;
 
     USE_EMPTY_TEXT_WORKAROUND = true;

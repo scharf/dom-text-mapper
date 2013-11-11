@@ -19,10 +19,13 @@
 
     DomTextMapper.instances = [];
 
-    DomTextMapper.changed = function(node, reason) {
+    DomTextMapper.changed = function(node, reason, data) {
       var instance, _i, _len, _ref;
       if (reason == null) {
         reason = "no reason";
+      }
+      if (data == null) {
+        data = {};
       }
       if (this.instances.length === 0) {
         return;
@@ -30,17 +33,30 @@
       _ref = this.instances;
       for (_i = 0, _len = _ref.length; _i < _len; _i++) {
         instance = _ref[_i];
-        if (instance.rootNode.contains(node)) {
-          instance.performUpdateOnNode(node);
+        if (!(instance.rootNode.contains(node))) {
+          continue;
         }
+        instance.documentChanged();
+        instance.performUpdateOnNode(node, false, data);
+        instance.lastScanned = instance.timestamp();
       }
       return null;
     };
 
-    function DomTextMapper() {
+    function DomTextMapper(id) {
+      var instances;
+      this.id = id;
       this.setRealRoot();
-      window.DomTextMapper.instances.push(this);
+      instances = window.DomTextMapper.instances;
+      instances.push(this);
+      if (this.id == null) {
+        this.id = "d-t-m #" + instances.length;
+      }
     }
+
+    DomTextMapper.prototype.log = function(msg) {
+      return console.log(this.id + ": " + msg);
+    };
 
     DomTextMapper.prototype.setRootNode = function(rootNode) {
       this.rootWin = window;
@@ -79,10 +95,16 @@
       return this.lastDOMChange = this.timestamp();
     };
 
+    DomTextMapper.prototype.setExpectedContent = function(content) {
+      return this.expectedContent = content;
+    };
+
     DomTextMapper.prototype.scan = function() {
       var node, path, startTime, t1, t2;
       if (this.domStableSince(this.lastScanned)) {
         return;
+      } else {
+
       }
       if (!this.pathStartNode.ownerDocument.body.contains(this.pathStartNode)) {
         return;
@@ -97,7 +119,7 @@
       this.collectPositions(node, path, null, 0, 0);
       this.restoreSelection();
       this.lastScanned = this.timestamp();
-      this.corpus = this.path[path].content;
+      this._corpus = this.path[path].content;
       t2 = this.timestamp();
       return null;
     };
@@ -157,7 +179,6 @@
         }
         this.traverseSubTree(node, path);
         if (pathInfo.node === this.pathStartNode) {
-          console.log("Ended up rescanning the whole doc.");
           this.collectPositions(node, path, null, 0, 0);
         } else {
           parentPath = this.parentPath(path);
@@ -201,11 +222,11 @@
     };
 
     DomTextMapper.prototype.getMappingsForCharRanges = function(charRanges) {
-      var charRange, mapping, _i, _len, _results;
+      var charRange, _i, _len, _results;
       _results = [];
       for (_i = 0, _len = charRanges.length; _i < _len; _i++) {
         charRange = charRanges[_i];
-        _results.push(mapping = this.getMappingsForCharRange(charRange.start, charRange.end));
+        _results.push(this.getMappingsForCharRange(charRange.start, charRange.end));
       }
       return _results;
     };
@@ -231,28 +252,18 @@
     };
 
     DomTextMapper.prototype.getDocLength = function() {
-      return this.getLengthForPath();
+      return this._corpus.length;
     };
 
-    DomTextMapper.prototype.getContentForCharRange = function(start, end, path) {
-      var text;
-      if (path == null) {
-        path = null;
-      }
-      text = this.getContentForPath(path).substr(start, end - start);
-      return text.trim();
+    DomTextMapper.prototype.getCorpus = function() {
+      return this._corpus;
     };
 
-    DomTextMapper.prototype.getContextForCharRange = function(start, end, path) {
-      var content, prefix, prefixLen, prefixStart, suffix;
-      if (path == null) {
-        path = null;
-      }
-      content = this.getContentForPath(path);
+    DomTextMapper.prototype.getContextForCharRange = function(start, end) {
+      var prefix, prefixStart, suffix;
       prefixStart = Math.max(0, start - CONTEXT_LEN);
-      prefixLen = start - prefixStart;
-      prefix = content.substr(prefixStart, prefixLen);
-      suffix = content.substr(end, prefixLen);
+      prefix = this._corpus.slice(prefixStart, +(start - 1) + 1 || 9e9);
+      suffix = this._corpus.slice(end, +(end + CONTEXT_LEN - 1) + 1 || 9e9);
       return [prefix.trim(), suffix.trim()];
     };
 
@@ -296,15 +307,15 @@
                 _this.computeSourcePositions(mapping);
                 mapping.yields = info.node.data.substr(mapping.startCorrected, mapping.endCorrected - mapping.startCorrected);
               } else if ((info.node.nodeType === Node.ELEMENT_NODE) && (info.node.tagName.toLowerCase() === "img")) {
-                console.log("Can not select a sub-string from the title of an image. Selecting all.");
+                _this.log("Can not select a sub-string from the title of an image. Selecting all.");
                 mapping.full = true;
                 mapping.wanted = info.content;
               } else {
-                console.log("Warning: no idea how to handle partial mappings for node type " + info.node.nodeType);
+                _this.log("Warning: no idea how to handle partial mappings for node type " + info.node.nodeType);
                 if (info.node.tagName != null) {
-                  console.log("Tag: " + info.node.tagName);
+                  _this.log("Tag: " + info.node.tagName);
                 }
-                console.log("Selecting all.");
+                _this.log("Selecting all.");
                 mapping.full = true;
                 mapping.wanted = info.content;
               }
@@ -314,6 +325,8 @@
         }
       }
       if (mappings.length === 0) {
+        this.log("Collecting nodes for [" + start + ":" + end + "]");
+        this.log("Should be: '" + this._corpus.slice(start, +(end - 1) + 1 || 9e9) + "'.");
         throw new Error("No mappings found for [" + start + ":" + end + "]!");
       }
       mappings = mappings.sort(function(a, b) {
@@ -355,7 +368,9 @@
         },
         safeParent: r.commonAncestorContainer
       };
-      return result;
+      return {
+        sections: [result]
+      };
     };
 
     DomTextMapper.prototype.timestamp = function() {
@@ -363,11 +378,11 @@
     };
 
     DomTextMapper.prototype.stringStartsWith = function(string, prefix) {
-      return prefix === string.substr(0, prefix.length);
+      return string.slice(0, +(prefix.length - 1) + 1 || 9e9) === prefix;
     };
 
     DomTextMapper.prototype.stringEndsWith = function(string, suffix) {
-      return suffix === string.substr(string.length - suffix.length);
+      return string.slice(string.length - suffix.length, +string.length + 1 || 9e9) === suffix;
     };
 
     DomTextMapper.prototype.parentPath = function(path) {
@@ -454,15 +469,15 @@
       };
       if (cont.length) {
         if (verbose) {
-          console.log("Collected info about path " + path);
+          this.log("Collected info about path " + path);
         }
         if (invisible) {
-          console.log("Something seems to be wrong. I see visible content @ " + path + ", while some of the ancestor nodes reported empty contents. Probably a new selection API bug....");
-          console.log("Anyway, text is '" + cont + "'.");
+          this.log("Something seems to be wrong. I see visible content @ " + path + ", while some of the ancestor nodes reported empty contents. Probably a new selection API bug....");
+          this.log("Anyway, text is '" + cont + "'.");
         }
       } else {
         if (verbose) {
-          console.log("Found no content at path " + path);
+          this.log("Found no content at path " + path);
         }
         invisible = true;
       }
@@ -495,8 +510,8 @@
     DomTextMapper.prototype.saveSelection = function() {
       var exception, i, sel, _i, _ref;
       if (this.savedSelection != null) {
-        console.log("Selection saved at:");
-        console.log(this.selectionSaved);
+        this.log("Selection saved at:");
+        this.log(this.selectionSaved);
         throw new Error("Selection already saved!");
       }
       sel = this.rootWin.getSelection();
@@ -562,9 +577,9 @@
           } catch (_error) {
             exception = _error;
             if (!(USE_EMPTY_TEXT_WORKAROUND && this.isWhitespace(node))) {
-              console.log("Warning: failed to scan element @ " + this.underTraverse);
-              console.log("Content is: " + node.innerHTML);
-              console.log("We won't be able to properly anchor to any text inside this element.");
+              this.log("Warning: failed to scan element @ " + this.underTraverse);
+              this.log("Content is: " + node.innerHTML);
+              this.log("We won't be able to properly anchor to any text inside this element.");
             }
           }
         }
@@ -577,7 +592,7 @@
         if (sn != null) {
           sn.scrollIntoViewIfNeeded();
         } else {
-          console.log("Failed to scroll to element. (Browser does not support scrollIntoViewIfNeeded?)");
+          this.log("Failed to scroll to element. (Browser does not support scrollIntoViewIfNeeded?)");
         }
       }
       return sel;
@@ -598,9 +613,6 @@
       }
       sel = this.selectNode(node);
       text = this.readSelectionText(sel);
-      if (this.postProcess != null) {
-        text = this.postProcess(text);
-      }
       if (shouldRestoreSelection) {
         this.restoreSelection();
       }
@@ -643,7 +655,11 @@
       if (shouldRestoreSelection == null) {
         shouldRestoreSelection = true;
       }
-      return this.getNodeSelectionText(node, shouldRestoreSelection);
+      if (node === this.pathStartNode && (this.expectedContent != null)) {
+        return this.expectedContent;
+      } else {
+        return this.getNodeSelectionText(node, shouldRestoreSelection);
+      }
     };
 
     DomTextMapper.prototype.collectPositions = function(node, path, parentContent, parentIndex, index) {
@@ -667,6 +683,8 @@
       }
       startIndex = parentContent != null ? parentContent.indexOf(content, index) : index;
       if (startIndex === -1) {
+        this.log("Content of this not is not present in content of parent, at path " + path);
+        this.log("(Content: '" + content + "'.)");
         return index;
       }
       endIndex = startIndex + content.length;
@@ -715,6 +733,49 @@
         }
       }).call(this);
       return result;
+    };
+
+    DomTextMapper.prototype._testMap = function() {
+      var expected, i, ok, p, _ref, _ref1;
+      this.log("Verifying map info: was it all properly traversed?");
+      _ref = this.path;
+      for (i in _ref) {
+        p = _ref[i];
+        if (p.atomic == null) {
+          this.log(i + " is missing data.");
+        }
+      }
+      this.log("Verifying map info: do atomic elements match?");
+      _ref1 = this.path;
+      for (i in _ref1) {
+        p = _ref1[i];
+        if (!p.atomic) {
+          continue;
+        }
+        expected = this._corpus.slice(p.start, +(p.end - 1) + 1 || 9e9);
+        ok = p.content === expected;
+        if (!ok) {
+          this.log("Mismatch on " + i + ": content is '" + p.content + "', range in corpus is '" + expected + "'.");
+        }
+        ok;
+      }
+      return null;
+    };
+
+    DomTextMapper.prototype.getPageIndex = function() {
+      return 0;
+    };
+
+    DomTextMapper.prototype.getPageCount = function() {
+      return 1;
+    };
+
+    DomTextMapper.prototype.getPageIndexForPos = function() {
+      return 0;
+    };
+
+    DomTextMapper.prototype.isPageMapped = function() {
+      return true;
     };
 
     return DomTextMapper;

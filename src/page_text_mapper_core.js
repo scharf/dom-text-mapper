@@ -77,6 +77,13 @@
       return window.dispatchEvent(event);
     };
 
+    PageTextMapperCore.prototype._onScroll = function() {
+      var event;
+      event = document.createEvent("UIEvents");
+      event.initUIEvent("docPageScrolling", false, false, window, 0);
+      return window.dispatchEvent(event);
+    };
+
     PageTextMapperCore.prototype.getInfoForNode = function(node) {
       var info, k, nodeData, pageData, v;
       pageData = this.getPageForNode(node);

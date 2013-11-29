@@ -45,7 +45,6 @@
         id: "d-t-m for page #" + info.index,
         rootNode: info.node
       });
-      info.domMapper.documentChanged();
       if (this.requiresSmartStringPadding) {
         info.domMapper.setExpectedContent(info.content);
       }

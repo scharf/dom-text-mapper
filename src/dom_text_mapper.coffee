@@ -59,17 +59,6 @@ class window.DomTextMapper
     @_changeRootNode document
     @pathStartNode = @getBody() 
 
-  # Notify the library that the document has changed.
-  # This means that subsequent calls can not safely re-use previously cached
-  # data structures, so some calculations will be necessary again.
-  #
-  # The usage of this feature is not mandatorry; if not receiving change
-  # notifications, the library will just assume that the document can change
-  # anythime, and therefore will not assume any stability.
-  documentChanged: ->
-    @lastDOMChange = @timestamp()
-#    @log "Registered document change."
-
   setExpectedContent: (content) ->
     @expectedContent = content
 
@@ -86,13 +75,11 @@ class window.DomTextMapper
   #   content: the text content of the node, as rendered by the browser
   #   length: the length of the next content
   scan: ->
-    if @domStableSince @lastScanned
-#      @log "We have a valid DOM structure cache."
+    # Have we ever scanned?
+    if @path?
+      # Do an incremental update instead
+      @_syncState "scan()"
       return
-    else
-#      @log "Last scan time:  " + @lastScanned
-#      @log "Last DOM change: " + @lastDOMChange
-#      @log "No valid DOM structure scan available, doing scan."
 
     unless @pathStartNode.ownerDocument.body.contains @pathStartNode
       # We cannot map nodes that are not attached.
@@ -111,7 +98,6 @@ class window.DomTextMapper
     node = @path[path].node
     @collectPositions node, path, null, 0, 0
     @restoreSelection()
-    @lastScanned = @timestamp()
     @_corpus = @path[path].content
 #    @log "Corpus is: " + @_corpus
 
@@ -375,14 +361,6 @@ class window.DomTextMapper
     string[ string.length - suffix.length .. string.length ] is suffix
 
   parentPath: (path) -> path.substr 0, path.lastIndexOf "/"
-
-  domChangedSince: (timestamp) ->
-    if @lastDOMChange? and timestamp?
-      @lastDOMChange > timestamp
-    else
-      true
-
-  domStableSince: (timestamp) -> not @domChangedSince timestamp
 
   getProperNodeName: (node) ->
     nodeName = node.nodeName
@@ -889,10 +867,7 @@ class window.DomTextMapper
     changeRoot = @_getCommonAncestor changedNodes
 
     # Rescan the involved part
-    @documentChanged()
     @performUpdateOnNode changeRoot, reason, false, data
-    @lastScanned = @timestamp()
-
 
   # Bring the our data up to date
   _syncState: (reason = "i am in the mood", data) ->

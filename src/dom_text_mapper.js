@@ -74,20 +74,15 @@
       return this.pathStartNode = this.getBody();
     };
 
-    DomTextMapper.prototype.documentChanged = function() {
-      return this.lastDOMChange = this.timestamp();
-    };
-
     DomTextMapper.prototype.setExpectedContent = function(content) {
       return this.expectedContent = content;
     };
 
     DomTextMapper.prototype.scan = function() {
       var node, path, startTime, t1, t2;
-      if (this.domStableSince(this.lastScanned)) {
+      if (this.path != null) {
+        this._syncState("scan()");
         return;
-      } else {
-
       }
       if (!this.pathStartNode.ownerDocument.body.contains(this.pathStartNode)) {
         return;
@@ -101,7 +96,6 @@
       node = this.path[path].node;
       this.collectPositions(node, path, null, 0, 0);
       this.restoreSelection();
-      this.lastScanned = this.timestamp();
       this._corpus = this.path[path].content;
       t2 = this.timestamp();
       return null;
@@ -379,18 +373,6 @@
 
     DomTextMapper.prototype.parentPath = function(path) {
       return path.substr(0, path.lastIndexOf("/"));
-    };
-
-    DomTextMapper.prototype.domChangedSince = function(timestamp) {
-      if ((this.lastDOMChange != null) && (timestamp != null)) {
-        return this.lastDOMChange > timestamp;
-      } else {
-        return true;
-      }
-    };
-
-    DomTextMapper.prototype.domStableSince = function(timestamp) {
-      return !this.domChangedSince(timestamp);
     };
 
     DomTextMapper.prototype.getProperNodeName = function(node) {
@@ -957,9 +939,7 @@
       }
       changedNodes = this._getInvolvedNodes(changes);
       changeRoot = this._getCommonAncestor(changedNodes);
-      this.documentChanged();
-      this.performUpdateOnNode(changeRoot, reason, false, data);
-      return this.lastScanned = this.timestamp();
+      return this.performUpdateOnNode(changeRoot, reason, false, data);
     };
 
     DomTextMapper.prototype._syncState = function(reason, data) {

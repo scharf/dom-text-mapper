@@ -65,7 +65,6 @@
       }
       this.rootNode = node;
       this.rootNode.addEventListener("domChange", this._onChange);
-      this.log("Starting to listen");
       this.observer = new MutationSummary({
         callback: this._onMutation,
         rootNode: node,

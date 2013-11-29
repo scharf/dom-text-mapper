@@ -23,14 +23,12 @@
 
     function DomTextMapper(options) {
       var _ref;
-      if (options == null) {
-        options = {};
-      }
+      this.options = options != null ? options : {};
       this._onMutation = __bind(this._onMutation, this);
       this._onChange = __bind(this._onChange, this);
-      this.id = (_ref = options.id) != null ? _ref : "d-t-m #" + DomTextMapper.instances;
-      if (options.rootNode != null) {
-        this.setRootNode(options.rootNode);
+      this.id = (_ref = this.options.id) != null ? _ref : "d-t-m #" + DomTextMapper.instances;
+      if (this.options.rootNode != null) {
+        this.setRootNode(this.options.rootNode);
       } else {
         this.setRealRoot();
       }
@@ -50,9 +48,22 @@
     };
 
     DomTextMapper.prototype._onMutation = function(summaries) {
-      var changes;
+      var attributeChangedCount, changes, k, v, _base, _ref;
       changes = summaries[0];
-      return console.log("** Seen mutations:", changes);
+      if (typeof (_base = this.options).mutationFilter === "function") {
+        _base.mutationFilter(changes);
+      }
+      attributeChangedCount = 0;
+      _ref = changes.attributeChanged;
+      for (k in _ref) {
+        v = _ref[k];
+        attributeChangedCount++;
+      }
+      if (!(changes.added.length || changes.characterDataChanged.length || changes.removed.length || changes.reordered.length || changes.reparented.length || attributeChangedCount)) {
+        return;
+      }
+      this.log("** Seen mutations:");
+      return console.log(changes);
     };
 
     DomTextMapper.prototype._changeRootNode = function(node) {

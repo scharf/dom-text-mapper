@@ -95,8 +95,8 @@
       path = this.getPathTo(this.pathStartNode);
       node = this.path[path].node;
       this.collectPositions(node, path, null, 0, 0);
+      this._corpus = this.getNodeContent(this.path[path].node, false);
       this.restoreSelection();
-      this._corpus = this.path[path].content;
       t2 = this.timestamp();
       return null;
     };
@@ -117,7 +117,10 @@
     };
 
     DomTextMapper.prototype.performUpdateOnNode = function(node, reason, escalating) {
-      var data, oldIndex, p, parentNode, parentPath, parentPathInfo, path, pathInfo, pathsToDrop, prefix, startTime, _i, _len, _ref;
+      var data, newContent, oldIndex, p, parentNode, parentPath, parentPathInfo, path, pathInfo, pathsToDrop, prefix, startTime, _i, _len, _ref;
+      if (reason == null) {
+        reason = "(no reason)";
+      }
       if (escalating == null) {
         escalating = false;
       }
@@ -141,7 +144,8 @@
         return;
       }
       this.log(reason, ": performing update on node @ path", path, "(", pathInfo.length, "characters)");
-      if (pathInfo.node === node && pathInfo.content === this.getNodeContent(node, false)) {
+      newContent = this.getNodeContent(node, false);
+      if (pathInfo.node === node && pathInfo.content === newContent) {
         prefix = path + "/";
         pathsToDrop = p;
         pathsToDrop = [];
@@ -433,6 +437,9 @@
       if (verbose == null) {
         verbose = false;
       }
+      if (this._isIgnored(node)) {
+        return;
+      }
       this.underTraverse = path;
       cont = this.getNodeContent(node, false);
       this.path[path] = {
@@ -626,14 +633,18 @@
     };
 
     DomTextMapper.prototype.getNodeContent = function(node, shouldRestoreSelection) {
+      var content;
       if (shouldRestoreSelection == null) {
         shouldRestoreSelection = true;
       }
-      if (node === this.pathStartNode && (this.expectedContent != null)) {
+      if ((node === this.pathStartNode) && (this.expectedContent != null)) {
         return this.expectedContent;
-      } else {
-        return this.getNodeSelectionText(node, shouldRestoreSelection);
       }
+      content = this.getNodeSelectionText(node, shouldRestoreSelection);
+      if ((node === this.pathStartNode) && (this.ignorePos != null)) {
+        return content.slice(0, +(this.ignorePos - 1) + 1 || 9e9);
+      }
+      return content;
     };
 
     DomTextMapper.prototype.collectPositions = function(node, path, parentContent, parentIndex, index) {
@@ -646,6 +657,13 @@
       }
       if (index == null) {
         index = 0;
+      }
+      if (this._isIgnored(node)) {
+        pos = parentIndex + index;
+        if (!((this.ignorePos != null) && this.ignorePos < pos)) {
+          this.ignorePos = pos;
+        }
+        return index;
       }
       pathInfo = this.path[path];
       content = pathInfo != null ? pathInfo.content : void 0;
@@ -756,59 +774,54 @@
       return true;
     };
 
+    DomTextMapper.prototype._getIgnoredParts = function() {
+      if (this.options.getIgnoredParts) {
+        if (this._ignoredParts && this.options.cacheIgnoredParts) {
+          return this._ignoredParts;
+        } else {
+          return this._ignoredParts = this.options.getIgnoredParts();
+        }
+      } else {
+        return [];
+      }
+    };
+
+    DomTextMapper.prototype._isIgnored = function(node) {
+      var container, _i, _len, _ref;
+      _ref = this._getIgnoredParts();
+      for (_i = 0, _len = _ref.length; _i < _len; _i++) {
+        container = _ref[_i];
+        if (container.contains(node)) {
+          return true;
+        }
+      }
+      return false;
+    };
+
     DomTextMapper.prototype._filterChanges = function(changes) {
       var attrName, attributeChanged, attributeChangedCount, elementList, k, list, removed, v, _ref, _ref1, _ref2,
         _this = this;
-      if (!this.options.getIgnoredParts) {
-        return changes;
-      }
-      if (!(this.ignoredParts && this.options.cacheIgnoredParts)) {
-        this.ignoredParts = this.options.getIgnoredParts();
-      }
-      if (!this.ignoredParts.length) {
+      if (this._getIgnoredParts().length === 0) {
         return changes;
       }
       changes.added = changes.added.filter(function(element) {
-        var container, _i, _len, _ref;
-        _ref = _this.ignoredParts;
-        for (_i = 0, _len = _ref.length; _i < _len; _i++) {
-          container = _ref[_i];
-          if (container.contains(element)) {
-            return false;
-          }
-        }
-        return true;
+        return !_this._isIgnored(element);
       });
       removed = changes.removed;
       changes.removed = removed.filter(function(element) {
-        var container, parent, _i, _len, _ref;
+        var parent;
         parent = element;
         while (__indexOf.call(removed, parent) >= 0) {
           parent = changes.getOldParentNode(parent);
         }
-        _ref = _this.ignoredParts;
-        for (_i = 0, _len = _ref.length; _i < _len; _i++) {
-          container = _ref[_i];
-          if (container.contains(parent)) {
-            return false;
-          }
-        }
-        return true;
+        return !_this._isIgnored(parent);
       });
       attributeChanged = {};
       _ref1 = (_ref = changes.attributeChanged) != null ? _ref : {};
       for (attrName in _ref1) {
         elementList = _ref1[attrName];
         list = elementList.filter(function(element) {
-          var container, _i, _len, _ref2;
-          _ref2 = _this.ignoredParts;
-          for (_i = 0, _len = _ref2.length; _i < _len; _i++) {
-            container = _ref2[_i];
-            if (container.contains(element)) {
-              return false;
-            }
-          }
-          return true;
+          return !_this._isIgnored(element);
         });
         if (list.length) {
           attributeChanged[attrName] = list;
@@ -816,27 +829,12 @@
       }
       changes.attributeChanged = attributeChanged;
       changes.characterDataChanged = changes.characterDataChanged.filter(function(element) {
-        var container, _i, _len, _ref2;
-        _ref2 = _this.ignoredParts;
-        for (_i = 0, _len = _ref2.length; _i < _len; _i++) {
-          container = _ref2[_i];
-          if (container.contains(element)) {
-            return false;
-          }
-        }
-        return true;
+        return !_this._isIgnored(element);
       });
       changes.reordered = changes.reordered.filter(function(element) {
-        var container, parent, _i, _len, _ref2;
+        var parent;
         parent = element.parentNode;
-        _ref2 = _this.ignoredParts;
-        for (_i = 0, _len = _ref2.length; _i < _len; _i++) {
-          container = _ref2[_i];
-          if (container.contains(parent)) {
-            return false;
-          }
-        }
-        return true;
+        return !_this._isIgnored(parent);
       });
       attributeChangedCount = 0;
       _ref2 = changes.attributeChanged;

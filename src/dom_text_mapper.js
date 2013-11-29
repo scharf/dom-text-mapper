@@ -986,7 +986,7 @@
 
     DomTextMapper.prototype._corpusChanged = function() {
       var event;
-      this.log("DETECTED CORPUS CHANGE! Clearing all data.");
+      this.log("Detected CORPUS CHANGE! Clearing all data, and doing full rescan.");
       delete this._corpus;
       delete this.path;
       delete this.ignorePos;

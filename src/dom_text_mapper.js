@@ -41,53 +41,6 @@
       return console.log.apply(console, [this.id, ": "].concat(__slice.call(msg)));
     };
 
-    DomTextMapper.prototype._onChange = function(event) {
-      this.documentChanged();
-      this.performUpdateOnNode(event.srcElement, false, event.data);
-      return this.lastScanned = this.timestamp();
-    };
-
-    DomTextMapper.prototype._onMutation = function(summaries) {
-      var attributeChangedCount, changes, k, v, _base, _ref;
-      changes = summaries[0];
-      if (typeof (_base = this.options).mutationFilter === "function") {
-        _base.mutationFilter(changes);
-      }
-      attributeChangedCount = 0;
-      _ref = changes.attributeChanged;
-      for (k in _ref) {
-        v = _ref[k];
-        attributeChangedCount++;
-      }
-      if (!(changes.added.length || changes.characterDataChanged.length || changes.removed.length || changes.reordered.length || changes.reparented.length || attributeChangedCount)) {
-        return;
-      }
-      this.log("** Seen mutations:");
-      return console.log(changes);
-    };
-
-    DomTextMapper.prototype._changeRootNode = function(node) {
-      var _ref, _ref1;
-      if ((_ref = this.observer) != null) {
-        _ref.disconnect();
-      }
-      if ((_ref1 = this.rootNode) != null) {
-        _ref1.removeEventListener("domChange", this._onChange);
-      }
-      this.rootNode = node;
-      this.rootNode.addEventListener("domChange", this._onChange);
-      this.observer = new MutationSummary({
-        callback: this._onMutation,
-        rootNode: node,
-        queries: [
-          {
-            all: true
-          }
-        ]
-      });
-      return node;
-    };
-
     DomTextMapper.prototype.setRootNode = function(rootNode) {
       this.rootWin = window;
       return this.pathStartNode = this._changeRootNode(rootNode);
@@ -159,6 +112,7 @@
       if (scroll == null) {
         scroll = false;
       }
+      this._syncState("selectPath('" + path + "')");
       info = this.path[path];
       if (info == null) {
         throw new Error("I have no info about a node at " + path);
@@ -168,7 +122,7 @@
       return this.selectNode(node, scroll);
     };
 
-    DomTextMapper.prototype.performUpdateOnNode = function(node, escalating) {
+    DomTextMapper.prototype.performUpdateOnNode = function(node, reason, escalating) {
       var data, oldIndex, p, parentNode, parentPath, parentPathInfo, path, pathInfo, pathsToDrop, prefix, startTime, _i, _len, _ref;
       if (escalating == null) {
         escalating = false;
@@ -186,12 +140,13 @@
       path = this.getPathTo(node);
       pathInfo = this.path[path];
       if (pathInfo == null) {
-        this.performUpdateOnNode(node.parentNode, true);
+        this.performUpdateOnNode(node.parentNode, "Escalated from " + reason, true);
         if (!escalating) {
           this.restoreSelection();
         }
         return;
       }
+      this.log(reason, ": performing update on node @ path", path, "(", pathInfo.length, "characters)");
       if (pathInfo.node === node && pathInfo.content === this.getNodeContent(node, false)) {
         prefix = path + "/";
         pathsToDrop = p;
@@ -222,7 +177,7 @@
       } else {
         if (pathInfo.node !== this.pathStartNode) {
           parentNode = node.parentNode != null ? node.parentNode : (parentPath = this.parentPath(path), this.lookUpNode(parentPath));
-          this.performUpdateOnNode(parentNode, true);
+          this.performUpdateOnNode(parentNode, "escalated from " + reason, true);
         } else {
           throw new Error("Can not keep up with the changes, since even the node configured as path start node was replaced.");
         }
@@ -234,6 +189,7 @@
 
     DomTextMapper.prototype.getInfoForPath = function(path) {
       var result;
+      this._syncState("getInfoForPath('" + path + "')");
       if (this.path == null) {
         throw new Error("Can't get info before running a scan() !");
       }
@@ -268,6 +224,7 @@
       if (path == null) {
         path = this.getDefaultPath();
       }
+      this._syncState("getContentForPath('" + path + "')");
       return this.path[path].content;
     };
 
@@ -278,19 +235,23 @@
       if (path == null) {
         path = this.getDefaultPath();
       }
+      this._syncState("getLengthForPath('" + path + "')");
       return this.path[path].length;
     };
 
     DomTextMapper.prototype.getDocLength = function() {
+      this._syncState("getDocLength()");
       return this._corpus.length;
     };
 
     DomTextMapper.prototype.getCorpus = function() {
+      this._syncState("getCorpus()");
       return this._corpus;
     };
 
     DomTextMapper.prototype.getContextForCharRange = function(start, end) {
       var prefix, prefixStart, suffix;
+      this._syncState("getContextForCharRange(" + start + ", " + end + ")");
       prefixStart = Math.max(0, start - CONTEXT_LEN);
       prefix = this._corpus.slice(prefixStart, +(start - 1) + 1 || 9e9);
       suffix = this._corpus.slice(end, +(end + CONTEXT_LEN - 1) + 1 || 9e9);
@@ -303,6 +264,7 @@
       if (!((start != null) && (end != null))) {
         throw new Error("start and end is required!");
       }
+      this._syncState("getMappingsForCharRange(" + start + ", " + end + ")");
       this.scan();
       mappings = [];
       _ref = this.path;
@@ -806,6 +768,237 @@
 
     DomTextMapper.prototype.isPageMapped = function() {
       return true;
+    };
+
+    DomTextMapper.prototype._filterChanges = function(changes) {
+      var attrName, attributeChanged, attributeChangedCount, elementList, k, list, removed, v, _ref, _ref1, _ref2,
+        _this = this;
+      if (!this.options.getIgnoredParts) {
+        return changes;
+      }
+      if (!(this.ignoredParts && this.options.cacheIgnoredParts)) {
+        this.ignoredParts = this.options.getIgnoredParts();
+      }
+      if (!this.ignoredParts.length) {
+        return changes;
+      }
+      changes.added = changes.added.filter(function(element) {
+        var container, _i, _len, _ref;
+        _ref = _this.ignoredParts;
+        for (_i = 0, _len = _ref.length; _i < _len; _i++) {
+          container = _ref[_i];
+          if (container.contains(element)) {
+            return false;
+          }
+        }
+        return true;
+      });
+      removed = changes.removed;
+      changes.removed = removed.filter(function(element) {
+        var container, parent, _i, _len, _ref;
+        parent = element;
+        while (__indexOf.call(removed, parent) >= 0) {
+          parent = changes.getOldParentNode(parent);
+        }
+        _ref = _this.ignoredParts;
+        for (_i = 0, _len = _ref.length; _i < _len; _i++) {
+          container = _ref[_i];
+          if (container.contains(parent)) {
+            return false;
+          }
+        }
+        return true;
+      });
+      attributeChanged = {};
+      _ref1 = (_ref = changes.attributeChanged) != null ? _ref : {};
+      for (attrName in _ref1) {
+        elementList = _ref1[attrName];
+        list = elementList.filter(function(element) {
+          var container, _i, _len, _ref2;
+          _ref2 = _this.ignoredParts;
+          for (_i = 0, _len = _ref2.length; _i < _len; _i++) {
+            container = _ref2[_i];
+            if (container.contains(element)) {
+              return false;
+            }
+          }
+          return true;
+        });
+        if (list.length) {
+          attributeChanged[attrName] = list;
+        }
+      }
+      changes.attributeChanged = attributeChanged;
+      changes.characterDataChanged = changes.characterDataChanged.filter(function(element) {
+        var container, _i, _len, _ref2;
+        _ref2 = _this.ignoredParts;
+        for (_i = 0, _len = _ref2.length; _i < _len; _i++) {
+          container = _ref2[_i];
+          if (container.contains(element)) {
+            return false;
+          }
+        }
+        return true;
+      });
+      changes.reordered = changes.reordered.filter(function(element) {
+        var container, parent, _i, _len, _ref2;
+        parent = element.parentNode;
+        _ref2 = _this.ignoredParts;
+        for (_i = 0, _len = _ref2.length; _i < _len; _i++) {
+          container = _ref2[_i];
+          if (container.contains(parent)) {
+            return false;
+          }
+        }
+        return true;
+      });
+      attributeChangedCount = 0;
+      _ref2 = changes.attributeChanged;
+      for (k in _ref2) {
+        v = _ref2[k];
+        attributeChangedCount++;
+      }
+      if (changes.added.length || changes.characterDataChanged.length || changes.removed.length || changes.reordered.length || changes.reparented.length || attributeChangedCount) {
+        return changes;
+      } else {
+        return null;
+      }
+      return changes;
+    };
+
+    DomTextMapper.prototype._getInvolvedNodes = function(changes) {
+      var k, list, n, newValue, nodes, oldValue, parent, _i, _j, _k, _l, _len, _len1, _len2, _len3, _len4, _len5, _m, _n, _ref, _ref1, _ref2, _ref3, _ref4, _ref5;
+      nodes = [];
+      _ref = changes.added;
+      for (_i = 0, _len = _ref.length; _i < _len; _i++) {
+        n = _ref[_i];
+        if (__indexOf.call(nodes, n) < 0) {
+          nodes.push(n);
+        }
+      }
+      _ref1 = changes.attributeChanged;
+      for (k in _ref1) {
+        list = _ref1[k];
+        for (_j = 0, _len1 = list.length; _j < _len1; _j++) {
+          n = list[_j];
+          oldValue = changes.getOldAttribute(n, k);
+          newValue = n.getAttribute(k);
+          if (__indexOf.call(nodes, n) < 0) {
+            nodes.push(n);
+          }
+        }
+      }
+      _ref2 = changes.characterDataChanged;
+      for (_k = 0, _len2 = _ref2.length; _k < _len2; _k++) {
+        n = _ref2[_k];
+        if (__indexOf.call(nodes, n) < 0) {
+          nodes.push(n);
+        }
+      }
+      _ref3 = changes.removed;
+      for (_l = 0, _len3 = _ref3.length; _l < _len3; _l++) {
+        n = _ref3[_l];
+        parent = n;
+        while ((__indexOf.call(changes.removed, parent) >= 0) || (__indexOf.call(changes.reparented, parent) >= 0)) {
+          parent = changes.getOldParentNode(parent);
+        }
+        if (__indexOf.call(nodes, parent) < 0) {
+          nodes.push(parent);
+        }
+      }
+      _ref4 = changes.reordered;
+      for (_m = 0, _len4 = _ref4.length; _m < _len4; _m++) {
+        n = _ref4[_m];
+        parent = n.parent;
+        if (__indexOf.call(nodes, parent) < 0) {
+          nodes.push(parent);
+        }
+      }
+      _ref5 = changes.reparented;
+      for (_n = 0, _len5 = _ref5.length; _n < _len5; _n++) {
+        n = _ref5[_n];
+        parent = n.parentNode;
+        if (__indexOf.call(nodes, parent) < 0) {
+          nodes.push(parent);
+        }
+        parent = n;
+        while ((__indexOf.call(changes.removed, parent) >= 0) || (__indexOf.call(changes.reparented, parent) >= 0)) {
+          parent = changes.getOldParentNode(parent);
+        }
+        if (__indexOf.call(nodes, parent) < 0) {
+          nodes.push(parent);
+        }
+      }
+      return nodes;
+    };
+
+    DomTextMapper.prototype._getCommonAncestor = function(nodes) {
+      var n, root, _i, _len;
+      if (!(nodes != null ? nodes.length : void 0)) {
+        throw "We need a list of nodes.";
+      }
+      root = nodes[0];
+      for (_i = 0, _len = nodes.length; _i < _len; _i++) {
+        n = nodes[_i];
+        while (!root.contains(n)) {
+          root = root.parentNode;
+        }
+      }
+      return root;
+    };
+
+    DomTextMapper.prototype._reactToChanges = function(reason, changes, data) {
+      var changeRoot, changedNodes;
+      if (changes) {
+        changes = this._filterChanges(changes);
+      }
+      if (!changes) {
+        return;
+      }
+      changedNodes = this._getInvolvedNodes(changes);
+      changeRoot = this._getCommonAncestor(changedNodes);
+      this.documentChanged();
+      this.performUpdateOnNode(changeRoot, reason, false, data);
+      return this.lastScanned = this.timestamp();
+    };
+
+    DomTextMapper.prototype._syncState = function(reason, data) {
+      var summaries;
+      if (reason == null) {
+        reason = "i am in the mood";
+      }
+      summaries = this.observer.takeSummaries();
+      return this._reactToChanges("SyncState for " + reason, summaries != null ? summaries[0] : void 0, data);
+    };
+
+    DomTextMapper.prototype._onChange = function(event) {
+      return this._syncState("change event '" + event.reason + "'", event.data);
+    };
+
+    DomTextMapper.prototype._onMutation = function(summaries) {
+      return this._reactToChanges("Observer called", summaries[0]);
+    };
+
+    DomTextMapper.prototype._changeRootNode = function(node) {
+      var _ref, _ref1;
+      if ((_ref = this.observer) != null) {
+        _ref.disconnect();
+      }
+      if ((_ref1 = this.rootNode) != null) {
+        _ref1.removeEventListener("domChange", this._onChange);
+      }
+      this.rootNode = node;
+      this.rootNode.addEventListener("domChange", this._onChange);
+      this.observer = new MutationSummary({
+        callback: this._onMutation,
+        rootNode: node,
+        queries: [
+          {
+            all: true
+          }
+        ]
+      });
+      return node;
     };
 
     return DomTextMapper;

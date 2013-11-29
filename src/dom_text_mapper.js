@@ -143,7 +143,6 @@
         }
         return;
       }
-      this.log(reason, ": performing update on node @ path", path, "(", pathInfo.length, "characters)");
       newContent = this.getNodeContent(node, false);
       if (pathInfo.node === node && pathInfo.content === newContent) {
         prefix = path + "/";
@@ -177,7 +176,9 @@
           parentNode = node.parentNode != null ? node.parentNode : (parentPath = this.parentPath(path), this.lookUpNode(parentPath));
           this.performUpdateOnNode(parentNode, "escalated from " + reason, true);
         } else {
-          throw new Error("Can not keep up with the changes, since even the node configured as path start node was replaced.");
+          this.restoreSelection();
+          this._corpusChanged();
+          this.saveSelection();
         }
       }
       if (!escalating) {
@@ -981,6 +982,18 @@
         ]
       });
       return node;
+    };
+
+    DomTextMapper.prototype._corpusChanged = function() {
+      var event;
+      this.log("DETECTED CORPUS CHANGE! Clearing all data.");
+      delete this._corpus;
+      delete this.path;
+      delete this.ignorePos;
+      this.scan();
+      event = document.createEvent("UIEvents");
+      event.initUIEvent("corpusChange", true, false, window, 0);
+      return this.rootNode.dispatchEvent(event);
     };
 
     return DomTextMapper;

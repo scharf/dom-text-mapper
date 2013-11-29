@@ -127,8 +127,8 @@ class window.DomTextMapper
       @performUpdateOnNode node.parentNode, "Escalated from " + reason, true
       unless escalating then @restoreSelection()        
       return
-    @log reason, ": performing update on node @ path", path,
-      "(", pathInfo.length, "characters)"
+#    @log reason, ": performing update on node @ path", path,
+#      "(", pathInfo.length, "characters)"
 
 #    if escalating then @log "(Escalated)"
 #    @log "Updating data about " + path + ": "
@@ -188,8 +188,10 @@ class window.DomTextMapper
           @lookUpNode parentPath
         @performUpdateOnNode parentNode, "escalated from " + reason, true
       else
-        throw new Error "Can not keep up with the changes,
- since even the node configured as path start node was replaced."
+        # Oops. This was the root node! That means the corpus has changed.
+        @restoreSelection()
+        @_corpusChanged()
+        @saveSelection()
     unless escalating then @restoreSelection()        
 
   # Return info for a given path in the DOM
@@ -922,3 +924,14 @@ class window.DomTextMapper
         all: true
       ]
     node
+
+  # This handles the situations when the corpus has actually changed.
+  _corpusChanged: ->
+    @log "DETECTED CORPUS CHANGE! Clearing all data."
+    delete @_corpus
+    delete @path
+    delete @ignorePos
+    @scan()
+    event = document.createEvent "UIEvents"
+    event.initUIEvent "corpusChange", true, false, window, 0
+    @rootNode.dispatchEvent event

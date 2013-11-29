@@ -1,3 +1,39 @@
+class SubTreeCollection
+
+  constructor: ->
+    @roots = []
+
+  # Unite a new node with a pre-existing set of nodex.
+  #
+  # The rules are as follows:
+  #  * If the node is identical to, or a successor of any of the
+  #    the existing nodes, then it's dropped.
+  #  * Otherwise it's added.
+  #  * If the node is an ancestor of any of the existing nodes,
+  #    the those nodes are dropper.
+  add: (node) ->
+
+    # Is this node already contained by any of the existing subtrees?
+    for root in @roots
+      return if root.contains node
+
+    # If we made it to this point, then it means that this is new.
+
+    newRoots = @roots.slice()
+
+    # Go over the collected roots, and see if some of them should be dropped
+    for root in @roots
+      if node.contains root # Is this root obsolete now?
+        i = newRoots.indexOf this  # Drop this root
+        newRoots[i..i] = []
+
+    # Add the new node to the end of the list
+    newRoots.push node
+
+    # Replace the old list with the new one
+    @roots = newRoots
+
+
 class window.DomTextMapper
 
   @applicable: -> true
@@ -9,32 +45,18 @@ class window.DomTextMapper
 
   @instances: 0
 
-  constructor: (@id)->
-    @setRealRoot()
+  constructor: (@options = {})->
+    @id = @options.id ? "d-t-m #" + DomTextMapper.instances
+    if @options.rootNode?
+      @setRootNode @options.rootNode
+    else
+      @setRealRoot()
     DomTextMapper.instances += 1
-    @id ?= "d-t-m #" + DomTextMapper.instances
 
   log: (msg...) ->
     console.log @id, ": ", msg...
 
   # ===== Public methods =======
-
-  # Change handler
-  _onChange: (event) =>
-#    @log "received change event", event
-#    @log "source", event.target
-#    @log "reason", event.reason ? "no reason"
-#    @log "data", event.data
-    @documentChanged()
-    @performUpdateOnNode event.target, false, event.data
-    @lastScanned = @timestamp()
-
-  # Change the root node, and subscribe to the events
-  _changeRootNode: (node) ->
-    @rootNode?.removeEventListener "domChange", @_onChange
-    @rootNode = node
-    @rootNode.addEventListener "domChange", @_onChange
-    node
 
   # Consider only the sub-tree beginning with the given node.
   # 
@@ -73,17 +95,6 @@ class window.DomTextMapper
     @_changeRootNode document
     @pathStartNode = @getBody() 
 
-  # Notify the library that the document has changed.
-  # This means that subsequent calls can not safely re-use previously cached
-  # data structures, so some calculations will be necessary again.
-  #
-  # The usage of this feature is not mandatorry; if not receiving change
-  # notifications, the library will just assume that the document can change
-  # anythime, and therefore will not assume any stability.
-  documentChanged: ->
-    @lastDOMChange = @timestamp()
-#    @log "Registered document change."
-
   setExpectedContent: (content) ->
     @expectedContent = content
 
@@ -99,21 +110,21 @@ class window.DomTextMapper
   #   node: reference to the DOM node
   #   content: the text content of the node, as rendered by the browser
   #   length: the length of the next content
-  scan: ->
-    if @domStableSince @lastScanned
-#      @log "We have a valid DOM structure cache."
+  scan: (reason = "unknown reason") ->
+    # Have we ever scanned?
+    if @path?
+      # Do an incremental update instead
+      @_syncState reason
       return
-    else
-#      @log "Last scan time:  " + @lastScanned
-#      @log "Last DOM change: " + @lastDOMChange
-#      @log "No valid DOM structure scan available, doing scan."
 
     unless @pathStartNode.ownerDocument.body.contains @pathStartNode
       # We cannot map nodes that are not attached.
 #      @log "This is not attached to dom. Exiting."
       return
 
-#    @log "No valid cache, will have to do a scan."
+    @log "Starting scan, because", reason
+    # Forget any recorded changes, we are starting with a clean slate.
+    @observer.takeSummaries()
     startTime = @timestamp()
     @saveSelection()
     @path = {}
@@ -124,97 +135,227 @@ class window.DomTextMapper
     path = @getPathTo @pathStartNode
     node = @path[path].node
     @collectPositions node, path, null, 0, 0
+    @_corpus = @getNodeContent @path[path].node, false
     @restoreSelection()
-    @lastScanned = @timestamp()
-    @_corpus = @path[path].content
 #    @log "Corpus is: " + @_corpus
 
     t2 = @timestamp()    
 #    @log "Phase II (offset calculation) took " + (t2 - t1) + " ms."
+
+    @log "Scan took", t2 - startTime, "ms."
 
     null
  
   # Select the given path (for visual identification),
   # and optionally scroll to it
   selectPath: (path, scroll = false) ->
+    @scan "selectPath('" + path + "')"
     info = @path[path]
     unless info? then throw new Error "I have no info about a node at " + path
     node = info?.node
     node or= @lookUpNode info.path
     @selectNode node, scroll
- 
-  performUpdateOnNode: (node, escalating = false) ->
-    unless node? then throw new Error "Called performUpdate with a null node!"
-    unless @path? then return #We don't have data yet. Not updating.
-    startTime = @timestamp()
-    unless escalating then @saveSelection()
+
+  # Update the mapping information to react to changes in the DOM
+  #
+  # node is the sub-tree of the changed part.
+  _performUpdateOnNode: (node, reason = "(no reason)") ->
+    # We really need a node
+    unless node
+      throw new Error "Called performUpdate with a null node!"
+
+    # No point in runnign this, we don't even have mapping data yet.
+    return unless @path
+
+    # Look up the info we have about this node
     path = @getPathTo node
     pathInfo = @path[path]
-    unless pathInfo?
-      @performUpdateOnNode node.parentNode, true
-      unless escalating then @restoreSelection()        
-      return
-#    @log "Performing update on node @ path " + path
 
-#    if escalating then @log "(Escalated)"
-#    @log "Updating data about " + path + ": "
-    if pathInfo.node is node and pathInfo.content is @getNodeContent node, false
-#      @log "Good, the node and the overall content is still the same"
-#      @log "Dropping obsolete path info for children..."
-      prefix = path + "/"
-      pathsToDrop =p
+    # Do we have data about this node?
+    while not pathInfo
+      # If not, go up one level.
+      @log "We don't have any data about the node @", @path, ". Moving up."
+      node = node.parentNode
+      path = @getPathTo node
+      pathInfo = @path[path]
 
-      # FIXME: There must be a more elegant way to do this. 
-      pathsToDrop = []
-      for p, data of @path when @stringStartsWith p, prefix
-        pathsToDrop.push p
-      for p in pathsToDrop
-        delete @path[p]        
-        
-#      @log "Done. Collecting new path info..."
-      @traverseSubTree node, path
+    # Start the clock
+    startTime = @timestamp()
 
-#      @log "Done. Updating mappings..."
+    # Save the selection, since we will have to restore it later.
+    @saveSelection()
 
-      if pathInfo.node is @pathStartNode
-#        @log "Ended up rescanning the whole doc."
-        @collectPositions node, path, null, 0, 0
-      else
-        parentPath = @parentPath path
-        parentPathInfo = @path[parentPath]
-        unless parentPathInfo?
-          throw new Error "While performing update on node " + path +
-              ", no path info found for parent path: " + parentPath
-        oldIndex = if node is node.parentNode.firstChild
-          0
-        else
-          @path[@getPathTo node.previousSibling].end - parentPathInfo.start
-        @collectPositions node, path, parentPathInfo.content,
-            parentPathInfo.start, oldIndex
-        
-#      @log "Data update took " + (@timestamp() - startTime) + " ms."
+    #@log reason, ": performing update on node @ path", path,
+    #  "(", pathInfo.length, "characters)"
 
+    # Save the old and the new content, for later reference
+    oldContent = pathInfo.content
+    content = @getNodeContent node, false
+
+    # Decide whether we are dealing with a corpus change
+    corpusChanged = oldContent isnt content
+
+    #if corpusChanged
+    #  @dmp ?= new DTM_DMPMatcher()
+    #  diff = @dmp.compare oldContent, content
+    #  @log "** Corpus change: ", diff
+
+    # === Phase 1: Drop the invalidated data
+
+    # @log "Dropping obsolete path info for children..."
+    prefix = path + "/" # The path to drop
+
+    # Collect the paths to delete (all children of this node)
+    pathsToDrop = (p for p, data of @path when @stringStartsWith p, prefix)
+
+    # Has the corpus changed?
+    if corpusChanged
+      # If yes, drop all data about this node / path
+      pathsToDrop.push path
+
+      # Also save the start and end positions from the pathInfo
+      oldStart = pathInfo.start
+      oldEnd = pathInfo.end
+
+    # Actually drop the selected paths
+    delete @path[p] for p in pathsToDrop
+
+    # === Phase 2: if necessary, modify the parts impacted by this change
+    # (Parent nodes and later siblings)
+
+    if corpusChanged
+      #@log "Hmm... overall node content has changed @", path, "!"
+
+      @_alterAncestorsMappingData node, path, oldStart, oldEnd, content
+      @_alterSiblingsMappingData node, oldStart, oldEnd, content
+
+    # Phase 3: re-scan the invalidated part
+
+    #@log "Collecting new path info for", path
+
+    @traverseSubTree node, path
+
+    #@log "Done. Updating mappings..."
+
+    # Is this the root node?
+    if node is @pathStartNode
+      # Yes, we have rescanned starting with the root node!
+      @log "Ended up rescanning the whole doc."
+      @collectPositions node, path, null, 0, 0
     else
-#      @log "Hm..node has been replaced, or overall content has changed!"
-      if pathInfo.node isnt @pathStartNode
-#        @log "I guess I must go up one level."
-        parentNode = if node.parentNode?
-#         @log "Node has parent, using that."
-          node.parentNode
-        else
-          parentPath = @parentPath path
-#          @log "Node has no parent, will look up " + parentPath
-          @lookUpNode parentPath
-        @performUpdateOnNode parentNode, true
+      # This was not the root path, so we must have a valid parent.
+      parentPath = @_parentPath path
+      parentPathInfo = @path[parentPath]
+
+      # Now let's find out where we are inside our parent
+      oldIndex = if node is node.parentNode.firstChild
+        0
       else
-        throw new Error "Can not keep up with the changes,
- since even the node configured as path start node was replaced."
-    unless escalating then @restoreSelection()        
+        predecessor = node.previousSibling
+        predecessorPath = @getPathTo predecessor
+        predecessorInfo = @path[predecessorPath]
+        unless predecessorInfo
+          throw new Error "While working on updating '" + path + "', I was trying to look up info about the previous sibling @ '" + predecessorPath + "', but we have none!"
+
+        @path[@getPathTo node.previousSibling].end - parentPathInfo.start
+
+      # Recursively calculate all the positions
+      @collectPositions node, path, parentPathInfo.content,
+          parentPathInfo.start, oldIndex
+        
+    #@log "Data update took " + (@timestamp() - startTime) + " ms."
+
+    # Restore the selection
+    @restoreSelection()
+
+    # Return whether the corpus has changed
+    corpusChanged
+
+
+  # Given the fact the the corpus of a given note has changed,
+  # update the mapping info of its ancestors
+  _alterAncestorsMappingData: (node, path, oldStart, oldEnd, newContent) ->
+
+    # Calculate how the length has changed
+    lengthDelta = newContent.length - (oldEnd - oldStart)
+
+    # Is this the root node?
+    if node is @pathStartNode
+
+      # Update the corpus
+      @_corpus = if @expectedContent?  # Do we have expected content?
+        @expectedContent               # There not much to calculate, then
+      else                             # No hard-wired result, let's calculate
+        unless @path[path]
+          console.log "We are @ path", path, "but we can't find info about it."
+          console.log @path
+          throw new Error "Internal error"
+        content = @path[path].content  # This is the base we are going to use
+        if @_ignorePos?                # Is there stuff at the end to ignore?
+          @_ignorePos += lengthDelta   # Update the ignore index
+          if @_ignorePos               # Is there anything left?
+            content[ ... @_ignorePos ] # Return the wanted segment
+          else                         # No, whole text is ignored
+            ""                         # Return an empty string
+        else                           # There is no ignore
+          content                      # We are going to use the whole content
+
+      # There are no more ancestors, so return
+      return
+
+    parentPath = @_parentPath path
+    parentPathInfo = @path[parentPath]
+
+    # Save old start and end
+    opStart = parentPathInfo.start
+    opEnd = parentPathInfo.end
+
+    # Calculate where the old content used to go in this parent
+    pStart = oldStart - opStart
+    pEnd = oldEnd - opStart
+    #@log "Relative to the parent: [", pStart, "..", pEnd, "]"
+
+    pContent = parentPathInfo.content
+
+    # Calculate the changed content
+
+    # Get the prefix
+    prefix = pContent[ ... pStart ]
+
+    # Get the suffix
+    suffix = pContent[pEnd ..]
+
+    # Replace the changed part in the parent's content
+    parentPathInfo.content = newContent = prefix + newContent + suffix
+
+    # Fix up the length and the end position
+    parentPathInfo.length += lengthDelta
+    parentPathInfo.end += lengthDelta
+
+    # Do the same with the next ancestor
+    @_alterAncestorsMappingData parentPathInfo.node, parentPath, opStart, opEnd,
+      newContent
+
+
+  # Given the fact the the corpus of a given note has changed,
+  # update the mapping info of all later nodes.
+  _alterSiblingsMappingData: (node, oldStart, oldEnd, newContent) ->
+    # Calculate the offset, based on the difference in length
+    delta = newContent.length - (oldEnd - oldStart)
+
+    # If the length delta is zero (ie. the old content has the same length
+    # as the new content), we don't have to do anything
+    return unless delta
+
+    # Go over all the elements that are later then the changed node
+    for p, info of @path when info.start >= oldEnd
+      # Correct their positions
+      info.start += delta
+      info.end += delta
 
   # Return info for a given path in the DOM
   getInfoForPath: (path) ->
-    unless @path?
-      throw new Error "Can't get info before running a scan() !"
+    @scan "getInfoForPath('" + path + "')"
     result = @path[path]
     unless result?
       throw new Error "Found no info for path '" + path + "'!"
@@ -233,25 +374,32 @@ class window.DomTextMapper
 
   # Return the rendered value of a part of the dom.
   # If path is not given, the default path is used.
-  getContentForPath: (path = null) -> 
-    path ?= @getDefaultPath()       
+  getContentForPath: (path = null) ->
+    path ?= @getDefaultPath()
+    @scan "getContentForPath('" + path + "')"
     @path[path].content
 
   # Return the length of the rendered value of a part of the dom.
   # If path is not given, the default path is used.
   getLengthForPath: (path = null) ->
     path ?= @getDefaultPath()
+    @cvan "getLengthForPath('" + path + "')"
     @path[path].length
 
-  getDocLength: -> @_corpus.length
+  getDocLength: ->
+    @scan "getDocLength()"
+    @_corpus.length
 
-  getCorpus: -> @_corpus
+  getCorpus: ->
+    @scan "getCorpus()"
+    @_corpus
 
   # Get the context that encompasses the given charRange
   # in the rendered text of the document
   getContextForCharRange: (start, end) ->
     if start < 0
       throw Error "Negative range start is invalid!"
+    @scan "getContextForCharRange(" + start + ", " + end + ")"
     if end > @_corpus.length
       throw Error "Range end is after the end of corpus!"
     prefixStart = Math.max 0, start - CONTEXT_LEN
@@ -267,14 +415,15 @@ class window.DomTextMapper
     unless (start? and end?)
       throw new Error "start and end is required!"
 
+    @scan "getMappingsForCharRange(" + start + ", " + end + ")"
+
 #    @log "Collecting nodes for [" + start + ":" + end + "]"
-    @scan()
 
     # Collect the matching path infos
     # @log "Collecting mappings"
     mappings = []
     for p, info of @path when info.atomic and
-        @regions_overlap info.start, info.end, start, end
+        @_regions_overlap info.start, info.end, start, end
       do (info) =>
 #        @log "Checking " + info.path
 #        @log info
@@ -301,7 +450,7 @@ class window.DomTextMapper
               mapping.end = end - info.start
               mapping.wanted = info.content.substr mapping.start,
                   mapping.end - mapping.start
-     
+
             @computeSourcePositions mapping
             mapping.yields = info.node.data.substr mapping.startCorrected,
                 mapping.endCorrected - mapping.startCorrected
@@ -384,15 +533,7 @@ class window.DomTextMapper
       throw Error "Requires a non-empty suffix!"
     string[ string.length - suffix.length ... string.length ] is suffix
 
-  parentPath: (path) -> path.substr 0, path.lastIndexOf "/"
-
-  domChangedSince: (timestamp) ->
-    if @lastDOMChange? and timestamp?
-      @lastDOMChange > timestamp
-    else
-      true
-
-  domStableSince: (timestamp) -> not @domChangedSince timestamp
+  _parentPath: (path) -> path.substr 0, path.lastIndexOf "/"
 
   getProperNodeName: (node) ->
     nodeName = node.nodeName
@@ -417,10 +558,14 @@ class window.DomTextMapper
     name + (if pos > 1 then "[#{pos}]" else "")
 
   getPathTo: (node) ->
+    unless origNode = node
+      throw new Error "Called getPathTo with null node!"
     xpath = '';
     while node != @rootNode
       unless node?
-        throw new Error "Called getPathTo on a node which was not a descendant of @rootNode. " + @rootNode
+        @log "Root node:", @rootNode
+        @log "Wanted node:", origNode
+        throw new Error "Called getPathTo on a node which was not a descendant of the configured root node."
       xpath = (@getPathSegment node) + '/' + xpath
       node = node.parentNode
     xpath = (if @rootNode.ownerDocument? then './' else '/') + xpath
@@ -429,6 +574,10 @@ class window.DomTextMapper
 
   # This method is called recursively, to traverse a given sub-tree of the DOM.
   traverseSubTree: (node, path, invisible = false, verbose = false) ->
+
+    # Should this node be ignored?
+    return if @_isIgnored node
+
     # Step one: get rendered node content, and store path info,
     # if there is valuable content
     @underTraverse = path
@@ -461,7 +610,7 @@ class window.DomTextMapper
 
   getBody: -> (@rootWin.document.getElementsByTagName "body")[0]
 
-  regions_overlap: (start1, end1, start2, end2) ->
+  _regions_overlap: (start1, end1, start2, end2) ->
       start1 < end2 and start2 < end1
 
   lookUpNode: (path) ->
@@ -576,9 +725,9 @@ class window.DomTextMapper
 
   # Convert "display" text indices to "source" text indices.
   computeSourcePositions: (match) ->
-#    @log "In computeSourcePosition"
-#    @log match.element.path
-#    @log match.element.node.data
+#    @log "In computeSourcePosition",
+#      match.element.path,
+#      match.element.node.data
 
     # the HTML source of the text inside a text element.
 #    @log "Calculating source position at " + match.element.path
@@ -616,7 +765,7 @@ class window.DomTextMapper
       sourceIndex++
     match.startCorrected = sourceStart
     match.endCorrected = sourceEnd
-#    @log "computeSourcePosition done. Corrected charRange is: " +
+#    @log "computeSourcePosition done. Corrected charRange is: ",
 #      match.startCorrected + "-" + match.endCorrected
     null
 
@@ -624,11 +773,14 @@ class window.DomTextMapper
   # as render by the browser.
   # The current implementation uses the browser selection API to do so.
   getNodeContent: (node, shouldRestoreSelection = true) ->
-    if node is @pathStartNode and @expectedContent?
+    if (node is @pathStartNode) and @expectedContent?
 #      @log "Returning fake expectedContent for getNodeContent"
-      @expectedContent
-    else
-      @getNodeSelectionText node, shouldRestoreSelection
+      return @expectedContent
+    content = @getNodeSelectionText node, shouldRestoreSelection
+    if (node is @pathStartNode) and @_ignorePos?
+      return content[ 0 ... @_ignorePos ]
+
+    content
 
   # Internal function to collect mapping data from a given DOM element.
   # 
@@ -653,6 +805,13 @@ class window.DomTextMapper
 #    @log "Scanning path " + path
 #    content = @getNodeContent node, false
 
+    # Should this node be ignored?
+    if @_isIgnored node
+      pos = parentIndex + index  # Where were we?
+      unless @_ignorePos? and @_ignorePos < pos # Have we seen better ?
+        @_ignorePos = pos
+      return index
+
     pathInfo = @path[path]
     content = pathInfo?.content
 
@@ -670,8 +829,9 @@ class window.DomTextMapper
     if startIndex is -1
       # content of node is not present in parent's content - probably hidden,
       # or something similar
-      @log "Content of this not is not present in content of parent, at path " + path
-      @log "(Content: '" + content + "'.)"
+#      @log "Content of this node is not present in content of parent, at path " + path
+#      @log "(Content: '" + content + "'.)"
+#      console.trace()
       return index
 
 
@@ -718,23 +878,248 @@ class window.DomTextMapper
       else false
     result
 
-  # Internal debug method to verify the consistency of mapping info
-  _testMap: ->
+  # Internal debug method to verify the consistency of mapping info of a node
+  _testNodeMapping: (path, info) ->
+
+    # If the info was not passed in, look it up
+    info ?= @path[path]
+
+    # Do we have it?
+    unless info
+      throw new Error "Could not look up node @ '" + path + "'!"
+
+    # Get the range from corpus
+    inCorpus = if info.end
+      @_corpus[ info.start ... info.end ]
+    else
+      ""
+
+    # Get the actual node content
+    realContent = @getNodeContent info.node
+
+    # Compare stored content with the data in corpus
+    ok1 = info.content is inCorpus
+    unless ok1
+      @log "Mismatch on ", path, ": stored content is",
+        "'" + info.content + "'",
+        ", range in corpus is",
+        "'" + inCorpus + "'"
+
+    # Compare stored content with actual content
+    ok2 = info.content is realContent
+    unless ok2
+      @log "Mismatch on ", path, ": stored content is '", info.content,
+        "', actual content is '", realContent, "'."
+
+    [ok1, ok2]
+
+  # Internal debug method to verify the consistency of all mapping info
+  _testAllMappings: ->
     @log "Verifying map info: was it all properly traversed?"
-    for i,p of @path
-      unless p.atomic? then @log i + " is missing data."
+    for i, p of @path
+      unless p.atomic? then @log i, "is missing data."
 
-    @log "Verifying map info: do atomic elements match?"
-    for i,p of @path when p.atomic
-      expected = @_corpus[ p.start ... p.end ]
-      ok = p.content is expected
-      unless ok then @log "Mismatch on " + i + ": content is '" + p.content + "', range in corpus is '" + expected + "'."
-      ok
+    @log "Verifying map info: do nodes match?"
+    @_testNodeMapping(path, info) for path, info of @path
 
-    null
 
   # Fake two-phase / pagination support, used for HTML documents
   getPageIndex: -> 0
   getPageCount: -> 1
+  getPageRoot: -> @rootNode
   getPageIndexForPos: -> 0
   isPageMapped: -> true
+
+  # Change tracking ===================
+
+  # Get the list of nodes that should be totally ignored
+  _getIgnoredParts: ->
+   # Do we have to ignore some parts?
+    if @options.getIgnoredParts # Yes, some parts should be ignored.
+      # Do we already have them, and are we allowed to cache?
+      if @_ignoredParts and @options.cacheIgnoredParts # Yes, in cache
+        @_ignoredParts
+      else # No cache (yet?). Get a new list!
+        @_ignoredParts = @options.getIgnoredParts()
+    else # Not ignoring anything; facing reality as it is
+      []
+
+  # Determines whether a node should be ignored
+  _isIgnored: (node) ->
+    for container in @_getIgnoredParts()
+      return true if container.contains node
+    return false
+
+  # Determine whether an attribute change has to be taken seriously
+  _isAttributeChangeImportant: (node, attributeName, oldValue, newValue) ->
+    # Do we have an attribute change filter configured?
+    if @options.filterAttributeChanges
+      # Use the filter to decide whether this change is important
+      @options.filterAttributeChanges node, attributeName, oldValue, newValue
+    else
+      # No filter, so we assume it's important
+      true
+
+  # Filter a change list
+  _filterChanges: (changes) ->
+
+    # If the list of parts to ignore is empty, don't filter
+    return changes if @_getIgnoredParts().length is 0
+
+    # OK, start filtering.
+
+    # Go through added elements
+    changes.added = changes.added.filter (element) =>
+      not @_isIgnored element
+
+    # Go through removed elements
+    removed = changes.removed
+    changes.removed = removed.filter (element) =>
+      parent = element
+      while parent in removed
+        parent = changes.getOldParentNode parent
+      not @_isIgnored parent
+
+    # Go through attributeChanged elements
+    attributeChanged = {}
+    for attrName, elementList of changes.attributeChanged ? {}
+      # Filter out the ignored elements
+      list = elementList.filter (element) => not @_isIgnored element
+
+      # Filter out the ignored attribute changes
+      list = list.filter (element) =>
+        @_isAttributeChangeImportant element, attrName,
+          changes.getOldAttribute(element, attrName),
+          element.getAttribute(attrName)
+
+      if list.length
+        attributeChanged[attrName] = list
+    changes.attributeChanged = attributeChanged
+
+    # Go through the characterDataChanged elements
+    changes.characterDataChanged = changes.characterDataChanged.filter (element) => not @_isIgnored element
+
+    # Go through the reordered elements
+    changes.reordered = changes.reordered.filter (element) =>
+      parent = element.parentNode
+      not @_isIgnored parent
+
+    # Go through the reparented elements
+    # TODO
+
+    attributeChangedCount = 0
+    for k, v of changes.attributeChanged
+      attributeChangedCount++
+    if changes.added.length or
+        changes.characterDataChanged.length or
+        changes.removed.length or
+        changes.reordered.length or
+        changes.reparented.length or
+        attributeChangedCount
+      return changes
+    else
+      return null
+
+    changes
+
+  # Callect all nodes involved in any of the passed changes
+  _getInvolvedNodes: (changes) ->
+    trees = new SubTreeCollection()
+
+    # Collect the parents of the added nodes
+    trees.add n.parentNode for n in changes.added
+
+    # Collect attribute changed nodes
+    for k, list of changes.attributeChanged
+      trees.add n for n in list
+
+    # Collect character data changed nodes
+    trees.add n for n in changes.characterDataChanged
+
+    # Collect the non-removed parents of removed nodes
+    for n in changes.removed
+      parent = n
+      while (parent in changes.removed) or (parent in changes.reparented)
+        parent = changes.getOldParentNode parent
+      trees.add parent
+
+    # Collect the parents of reordered nodes
+    trees.add n.parentNode for n in changes.reordered
+
+    # Collect the parents of reparented nodes
+    for n in changes.reparented
+      # Get the current parent
+      trees.add n.parentNode
+
+      # Get the old parent
+      parent = n
+      while (parent in changes.removed) or (parent in changes.reparented)
+        parent = changes.getOldParentNode parent
+      trees.add parent
+
+    return trees.roots
+
+
+  # React to the pasted list of changes
+  _reactToChanges: (reason, changes, data) ->
+    if changes
+      changes = @_filterChanges changes # Filter the received changes
+    unless changes # Did anything remain ?
+#      unless reason is "Observer called"
+#      @log reason, ", but no (real) changes detected"
+      return
+
+    # Actually react to the changes
+#    @log reason, changes
+
+    # Collect the changed sub-trees
+    changedNodes = @_getInvolvedNodes changes
+
+    corpusChanged = false
+
+    # Go over the changed parts
+    for node in changedNodes
+      # Perform an incremental update on them
+      if @_performUpdateOnNode node, reason, false, data
+        # If this change involved a root change, set the flag
+        corpusChanged = true
+#        @log "Setting the corpus changed flag on changes @", node
+
+    # If there was a corpus change, announce it
+    if corpusChanged then setTimeout =>
+#      @log "CORPUS HAS CHANGED"
+      event = document.createEvent "UIEvents"
+      event.initUIEvent "corpusChange", true, false, window, 0
+      @rootNode.dispatchEvent event
+
+  # Bring the our data up to date
+  _syncState: (reason = "i am in the mood", data) ->
+
+    # Get the changes from the observer
+    summaries = @observer.takeSummaries()
+
+#    if summaries # react to them
+    @_reactToChanges "SyncState for " + reason, summaries?[0], data
+
+  # Change handler, called when we receive a change notification
+  _onChange: (event) =>
+    @_syncState "change event '" + event.reason + "'", event.data
+
+
+  # Callback for the mutation observer
+  _onMutation: (summaries) =>
+#    @log "DOM mutated!"
+    @_reactToChanges "Observer called", summaries[0]
+
+
+  # Change the root node, and subscribe to the events
+  _changeRootNode: (node) ->
+    @observer?.disconnect()
+    @rootNode = node
+    @observer = new MutationSummary
+      callback: @_onMutation
+      rootNode: node
+      queries: [
+        all: true
+      ]
+    node

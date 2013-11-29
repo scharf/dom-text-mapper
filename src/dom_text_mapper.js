@@ -744,6 +744,10 @@
       return 1;
     };
 
+    DomTextMapper.prototype.getPageRoot = function() {
+      return this.rootNode;
+    };
+
     DomTextMapper.prototype.getPageIndexForPos = function() {
       return 0;
     };

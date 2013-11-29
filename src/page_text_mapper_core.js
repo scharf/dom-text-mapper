@@ -22,6 +22,10 @@
       return -1;
     };
 
+    PageTextMapperCore.prototype.getPageRoot = function(index) {
+      return this.getRootNodeForPage(index);
+    };
+
     PageTextMapperCore.prototype._onPageRendered = function(index) {
       var _this = this;
       if (!this._isPageRendered(index)) {

@@ -21,14 +21,20 @@
 
     DomTextMapper.instances = 0;
 
-    function DomTextMapper(id) {
-      this.id = id;
-      this._onChange = __bind(this._onChange, this);
-      this.setRealRoot();
-      DomTextMapper.instances += 1;
-      if (this.id == null) {
-        this.id = "d-t-m #" + DomTextMapper.instances;
+    function DomTextMapper(options) {
+      var _ref;
+      if (options == null) {
+        options = {};
       }
+      this._onMutation = __bind(this._onMutation, this);
+      this._onChange = __bind(this._onChange, this);
+      this.id = (_ref = options.id) != null ? _ref : "d-t-m #" + DomTextMapper.instances;
+      if (options.rootNode != null) {
+        this.setRootNode(options.rootNode);
+      } else {
+        this.setRealRoot();
+      }
+      DomTextMapper.instances += 1;
     }
 
     DomTextMapper.prototype.log = function() {
@@ -43,13 +49,32 @@
       return this.lastScanned = this.timestamp();
     };
 
+    DomTextMapper.prototype._onMutation = function(summaries) {
+      var changes;
+      changes = summaries[0];
+      return console.log("** Seen mutations:", changes);
+    };
+
     DomTextMapper.prototype._changeRootNode = function(node) {
-      var _ref;
-      if ((_ref = this.rootNode) != null) {
-        _ref.removeEventListener("domChange", this._onChange);
+      var _ref, _ref1;
+      if ((_ref = this.observer) != null) {
+        _ref.disconnect();
+      }
+      if ((_ref1 = this.rootNode) != null) {
+        _ref1.removeEventListener("domChange", this._onChange);
       }
       this.rootNode = node;
       this.rootNode.addEventListener("domChange", this._onChange);
+      this.log("Starting to listen");
+      this.observer = new MutationSummary({
+        callback: this._onMutation,
+        rootNode: node,
+        queries: [
+          {
+            all: true
+          }
+        ]
+      });
       return node;
     };
 

@@ -11,6 +11,9 @@ class window.PageTextMapperCore
         console.log "Not on page " + info.index
     return -1
 
+  # Return the root node for a given page
+  getPageRoot: (index) -> @getRootNodeForPage index
+
   # A new page was rendered
   _onPageRendered: (index) =>
     #console.log "Allegedly rendered page #" + index
@@ -31,9 +34,9 @@ class window.PageTextMapperCore
    # Create the mappings for a given page    
   _mapPage: (info) ->
     info.node = @getRootNodeForPage info.index        
-    info.domMapper = new DomTextMapper("d-t-m for page #" + info.index)
-    info.domMapper.setRootNode info.node
-    info.domMapper.documentChanged()
+    info.domMapper = new DomTextMapper
+      id: "d-t-m for page #" + info.index
+      rootNode: info.node
     if @requiresSmartStringPadding
       info.domMapper.setExpectedContent info.content
     info.domMapper.scan()
@@ -54,7 +57,6 @@ class window.PageTextMapperCore
   # Update the mappings for a given page
   _updateMap: (info) ->
     #console.log "Updating mappings for page #" + info.index
-    info.domMapper.documentChanged()
     info.domMapper.scan()
 
   # Delete the mappings for a given page

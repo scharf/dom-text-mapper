@@ -22,6 +22,10 @@
       return -1;
     };
 
+    PageTextMapperCore.prototype.getPageRoot = function(index) {
+      return this.getRootNodeForPage(index);
+    };
+
     PageTextMapperCore.prototype._onPageRendered = function(index) {
       var _this = this;
       if (!this._isPageRendered(index)) {
@@ -41,9 +45,10 @@
     PageTextMapperCore.prototype._mapPage = function(info) {
       var renderedContent;
       info.node = this.getRootNodeForPage(info.index);
-      info.domMapper = new DomTextMapper("d-t-m for page #" + info.index);
-      info.domMapper.setRootNode(info.node);
-      info.domMapper.documentChanged();
+      info.domMapper = new DomTextMapper({
+        id: "d-t-m for page #" + info.index,
+        rootNode: info.node
+      });
       if (this.requiresSmartStringPadding) {
         info.domMapper.setExpectedContent(info.content);
       }
@@ -65,7 +70,6 @@
     };
 
     PageTextMapperCore.prototype._updateMap = function(info) {
-      info.domMapper.documentChanged();
       return info.domMapper.scan();
     };
 

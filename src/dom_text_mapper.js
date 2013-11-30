@@ -117,7 +117,8 @@
     };
 
     DomTextMapper.prototype.performUpdateOnNode = function(node, reason, escalating) {
-      var data, newContent, oldIndex, p, parentNode, parentPath, parentPathInfo, path, pathInfo, pathsToDrop, prefix, startTime, _i, _len, _ref;
+      var data, newContent, oldIndex, p, parentNode, parentPath, parentPathInfo, path, pathInfo, pathsToDrop, prefix, startTime, _i, _len, _ref,
+        _this = this;
       if (reason == null) {
         reason = "(no reason)";
       }
@@ -176,9 +177,9 @@
           parentNode = node.parentNode != null ? node.parentNode : (parentPath = this.parentPath(path), this.lookUpNode(parentPath));
           this.performUpdateOnNode(parentNode, "escalated from " + reason, true);
         } else {
-          this.restoreSelection();
-          this._corpusChanged();
-          this.saveSelection();
+          setTimeout(function() {
+            return _this._corpusChanged();
+          });
         }
       }
       if (!escalating) {
@@ -264,7 +265,6 @@
         throw new Error("start and end is required!");
       }
       this._syncState("getMappingsForCharRange(" + start + ", " + end + ")");
-      this.scan();
       mappings = [];
       _ref = this.path;
       for (p in _ref) {

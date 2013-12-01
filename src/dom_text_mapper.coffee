@@ -1,3 +1,39 @@
+class SubTreeCollection
+
+  constructor: ->
+    @roots = []
+
+  # Unite a new node with a pre-existing set of nodex.
+  #
+  # The rules are as follows:
+  #  * If the node is identical to, or a successor of any of the
+  #    the existing nodes, then it's dropped.
+  #  * Otherwise it's added.
+  #  * If the node is an ancestor of any of the existing nodes,
+  #    the those nodes are dropper.
+  add: (node) ->
+
+    # Is this node already contained by any of the existing subtrees?
+    for root in @roots
+      return if root.contains node
+
+    # If we made it to this point, then it means that this is new.
+
+    newRoots = @roots.slice()
+
+    # Go over the collected roots, and see if some of them should be dropped
+    for root in @roots
+      if node.contains root # Is this root obsolete now?
+        i = newRoots.indexOf this  # Drop this root
+        newRoots[i..i] = []
+
+    # Add the new node to the end of the list
+    newRoots.push node
+
+    # Replace the old list with the new one
+    @roots = newRoots
+
+
 class window.DomTextMapper
 
   @applicable: -> true
@@ -813,67 +849,42 @@ class window.DomTextMapper
 
     changes
 
-
   # Callect all nodes involved in any of the passed changes
   _getInvolvedNodes: (changes) ->
-    nodes = []
+    trees = new SubTreeCollection()
 
-    # Collect changed nodes
-    for n in changes.added
-      nodes.push n unless n in nodes
+    # Collect the parents of the added nodes
+    trees.add n.parentNode for n in changes.added
 
     # Collect attribute changed nodes
     for k, list of changes.attributeChanged
-      for n in list
-        oldValue = changes.getOldAttribute n, k
-        newValue = n.getAttribute k
-#        console.log "Attribute change: ", n.tagName, ".", k, ":",
-#          "'" + oldValue + "'",
-#          "->",
-#          "'" +  newValue + "'"
-        nodes.push n unless n in nodes
+      trees.add n for n in list
 
     # Collect character data changed nodes
-    for n in changes.characterDataChanged
-      nodes.push n unless n in nodes
+    trees.add n for n in changes.characterDataChanged
 
     # Collect the non-removed parents of removed nodes
     for n in changes.removed
       parent = n
       while (parent in changes.removed) or (parent in changes.reparented)
         parent = changes.getOldParentNode parent
-      nodes.push parent unless parent in nodes
+      trees.add parent
 
     # Collect the parents of reordered nodes
-    for n in changes.reordered
-      parent = n.parent
-      nodes.push parent unless parent in nodes
+    trees.add n.parentNode for n in changes.reordered
 
     # Collect the parents of reparented nodes
     for n in changes.reparented
       # Get the current parent
-      parent = n.parentNode
-      nodes.push parent unless parent in nodes
+      trees.add n.parentNode
 
       # Get the old parent
       parent = n
       while (parent in changes.removed) or (parent in changes.reparented)
         parent = changes.getOldParentNode parent
-      nodes.push parent unless parent in nodes
+      trees.add parent
 
-    return nodes
-
-
-  # Determine the first common ancestor of the passed nodes
-  _getCommonAncestor: (nodes) ->
-    unless nodes?.length
-      throw "We need a list of nodes."
-
-    root = nodes[0]             # Start with the first node
-    for n in nodes              # Go over all the nodes
-      while not root.contains n # Push root up, until it encompasses
-        root = root.parentNode  # all
-    root
+    return trees.roots
 
 
   # React to the pasted list of changes
@@ -888,14 +899,12 @@ class window.DomTextMapper
     # Actually react to the changes
 #    @log reason, changes
 
-    # Collect all the interesting nodes
+    # Collect the changed sub-trees
     changedNodes = @_getInvolvedNodes changes
 
-    # Get the common root of all changed nodes
-    changeRoot = @_getCommonAncestor changedNodes
-
-    # Rescan the involved part
-    @performUpdateOnNode changeRoot, reason, false, data
+    # Rescan the involved parts
+    for node in changedNodes
+      @performUpdateOnNode node, reason, false, data
 
   # Bring the our data up to date
   _syncState: (reason = "i am in the mood", data) ->
@@ -920,9 +929,7 @@ class window.DomTextMapper
   # Change the root node, and subscribe to the events
   _changeRootNode: (node) ->
     @observer?.disconnect()
-    @rootNode?.removeEventListener "domChange", @_onChange
     @rootNode = node
-    @rootNode.addEventListener "domChange", @_onChange
     @observer = new MutationSummary
       callback: @_onMutation
       rootNode: node
@@ -933,11 +940,10 @@ class window.DomTextMapper
 
   # This handles the situations when the corpus has actually changed.
   _corpusChanged: ->
-    @log "Detected CORPUS CHANGE! Clearing all data, and doing full rescan."
     delete @_corpus
     delete @path
     delete @ignorePos
-    @scan "corpus changed"
+    @scan "CORPUS HAS CHANGED"
     event = document.createEvent "UIEvents"
     event.initUIEvent "corpusChange", true, false, window, 0
     @rootNode.dispatchEvent event

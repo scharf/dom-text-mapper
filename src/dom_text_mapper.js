@@ -78,15 +78,20 @@
       return this.expectedContent = content;
     };
 
-    DomTextMapper.prototype.scan = function() {
+    DomTextMapper.prototype.scan = function(reason) {
       var node, path, startTime, t1, t2;
+      if (reason == null) {
+        reason = "unknown reason";
+      }
       if (this.path != null) {
-        this._syncState("scan()");
+        this._syncState(reason);
         return;
       }
       if (!this.pathStartNode.ownerDocument.body.contains(this.pathStartNode)) {
         return;
       }
+      this.log("Starting scan, because", reason);
+      this.observer.takeSummaries();
       startTime = this.timestamp();
       this.saveSelection();
       this.path = {};
@@ -98,6 +103,7 @@
       this._corpus = this.getNodeContent(this.path[path].node, false);
       this.restoreSelection();
       t2 = this.timestamp();
+      this.log("Scan took", t2 - startTime, "ms.");
       return null;
     };
 
@@ -106,7 +112,7 @@
       if (scroll == null) {
         scroll = false;
       }
-      this._syncState("selectPath('" + path + "')");
+      this.scan("selectPath('" + path + "')");
       info = this.path[path];
       if (info == null) {
         throw new Error("I have no info about a node at " + path);
@@ -189,10 +195,7 @@
 
     DomTextMapper.prototype.getInfoForPath = function(path) {
       var result;
-      this._syncState("getInfoForPath('" + path + "')");
-      if (this.path == null) {
-        throw new Error("Can't get info before running a scan() !");
-      }
+      this.scan("getInfoForPath('" + path + "')");
       result = this.path[path];
       if (result == null) {
         throw new Error("Found no info for path '" + path + "'!");
@@ -224,7 +227,7 @@
       if (path == null) {
         path = this.getDefaultPath();
       }
-      this._syncState("getContentForPath('" + path + "')");
+      this.scan("getContentForPath('" + path + "')");
       return this.path[path].content;
     };
 
@@ -235,23 +238,23 @@
       if (path == null) {
         path = this.getDefaultPath();
       }
-      this._syncState("getLengthForPath('" + path + "')");
+      this.cvan("getLengthForPath('" + path + "')");
       return this.path[path].length;
     };
 
     DomTextMapper.prototype.getDocLength = function() {
-      this._syncState("getDocLength()");
+      this.scan("getDocLength()");
       return this._corpus.length;
     };
 
     DomTextMapper.prototype.getCorpus = function() {
-      this._syncState("getCorpus()");
+      this.scan("getCorpus()");
       return this._corpus;
     };
 
     DomTextMapper.prototype.getContextForCharRange = function(start, end) {
       var prefix, prefixStart, suffix;
-      this._syncState("getContextForCharRange(" + start + ", " + end + ")");
+      this.scan("getContextForCharRange(" + start + ", " + end + ")");
       prefixStart = Math.max(0, start - CONTEXT_LEN);
       prefix = this._corpus.slice(prefixStart, +(start - 1) + 1 || 9e9);
       suffix = this._corpus.slice(end, +(end + CONTEXT_LEN - 1) + 1 || 9e9);
@@ -264,7 +267,7 @@
       if (!((start != null) && (end != null))) {
         throw new Error("start and end is required!");
       }
-      this._syncState("getMappingsForCharRange(" + start + ", " + end + ")");
+      this.scan("getMappingsForCharRange(" + start + ", " + end + ")");
       mappings = [];
       _ref = this.path;
       for (p in _ref) {
@@ -676,8 +679,7 @@
       }
       startIndex = parentContent != null ? parentContent.indexOf(content, index) : index;
       if (startIndex === -1) {
-        this.log("Content of this not is not present in content of parent, at path " + path);
-        this.log("(Content: '" + content + "'.)");
+        this.log("Content of this node is not present in content of parent, at path " + path);
         return index;
       }
       endIndex = startIndex + content.length;
@@ -990,7 +992,7 @@
       delete this._corpus;
       delete this.path;
       delete this.ignorePos;
-      this.scan();
+      this.scan("corpus changed");
       event = document.createEvent("UIEvents");
       event.initUIEvent("corpusChange", true, false, window, 0);
       return this.rootNode.dispatchEvent(event);

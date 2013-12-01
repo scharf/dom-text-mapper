@@ -74,11 +74,11 @@ class window.DomTextMapper
   #   node: reference to the DOM node
   #   content: the text content of the node, as rendered by the browser
   #   length: the length of the next content
-  scan: ->
+  scan: (reason = "unknown reason") ->
     # Have we ever scanned?
     if @path?
       # Do an incremental update instead
-      @_syncState "scan()"
+      @_syncState reason
       return
 
     unless @pathStartNode.ownerDocument.body.contains @pathStartNode
@@ -86,7 +86,9 @@ class window.DomTextMapper
 #      @log "This is not attached to dom. Exiting."
       return
 
-#    @log "No valid cache, will have to do a scan."
+    @log "Starting scan, because", reason
+    # Forget any recorded changes, we are starting with a clean slate.
+    @observer.takeSummaries()
     startTime = @timestamp()
     @saveSelection()
     @path = {}
@@ -104,12 +106,14 @@ class window.DomTextMapper
     t2 = @timestamp()    
 #    @log "Phase II (offset calculation) took " + (t2 - t1) + " ms."
 
+    @log "Scan took", t2 - startTime, "ms."
+
     null
  
   # Select the given path (for visual identification),
   # and optionally scroll to it
   selectPath: (path, scroll = false) ->
-    @_syncState "selectPath('" + path + "')"
+    @scan "selectPath('" + path + "')"
     info = @path[path]
     unless info? then throw new Error "I have no info about a node at " + path
     node = info?.node
@@ -198,9 +202,7 @@ class window.DomTextMapper
 
   # Return info for a given path in the DOM
   getInfoForPath: (path) ->
-    @_syncState "getInfoForPath('" + path + "')"
-    unless @path?
-      throw new Error "Can't get info before running a scan() !"
+    @scan "getInfoForPath('" + path + "')"
     result = @path[path]
     unless result?
       throw new Error "Found no info for path '" + path + "'!"
@@ -221,28 +223,28 @@ class window.DomTextMapper
   # If path is not given, the default path is used.
   getContentForPath: (path = null) ->
     path ?= @getDefaultPath()
-    @_syncState "getContentForPath('" + path + "')"
+    @scan "getContentForPath('" + path + "')"
     @path[path].content
 
   # Return the length of the rendered value of a part of the dom.
   # If path is not given, the default path is used.
   getLengthForPath: (path = null) ->
     path ?= @getDefaultPath()
-    @_syncState "getLengthForPath('" + path + "')"
+    @cvan "getLengthForPath('" + path + "')"
     @path[path].length
 
   getDocLength: ->
-    @_syncState "getDocLength()"
+    @scan "getDocLength()"
     @_corpus.length
 
   getCorpus: ->
-    @_syncState "getCorpus()"
+    @scan "getCorpus()"
     @_corpus
 
   # Get the context that encompasses the given charRange
   # in the rendered text of the document
   getContextForCharRange: (start, end) ->
-    @_syncState "getContextForCharRange(" + start + ", " + end + ")"
+    @scan "getContextForCharRange(" + start + ", " + end + ")"
     prefixStart = Math.max 0, start - CONTEXT_LEN
     prefix = @_corpus[prefixStart .. start - 1]
     suffix = @_corpus[end .. end + CONTEXT_LEN - 1]
@@ -256,7 +258,7 @@ class window.DomTextMapper
     unless (start? and end?)
       throw new Error "start and end is required!"
 
-    @_syncState "getMappingsForCharRange(" + start + ", " + end + ")"
+    @scan "getMappingsForCharRange(" + start + ", " + end + ")"
 
 #    @log "Collecting nodes for [" + start + ":" + end + "]"
 
@@ -666,8 +668,9 @@ class window.DomTextMapper
     if startIndex is -1
       # content of node is not present in parent's content - probably hidden,
       # or something similar
-      @log "Content of this not is not present in content of parent, at path " + path
-      @log "(Content: '" + content + "'.)"
+      @log "Content of this node is not present in content of parent, at path " + path
+#      @log "(Content: '" + content + "'.)"
+#      console.trace()
       return index
 
 
@@ -909,7 +912,9 @@ class window.DomTextMapper
 
 
   # Callback for the mutation observer
-  _onMutation: (summaries) => @_reactToChanges "Observer called", summaries[0]
+  _onMutation: (summaries) =>
+#    @log "DOM mutated!"
+    @_reactToChanges "Observer called", summaries[0]
 
 
   # Change the root node, and subscribe to the events
@@ -932,7 +937,7 @@ class window.DomTextMapper
     delete @_corpus
     delete @path
     delete @ignorePos
-    @scan()
+    @scan "corpus changed"
     event = document.createEvent "UIEvents"
     event.initUIEvent "corpusChange", true, false, window, 0
     @rootNode.dispatchEvent event

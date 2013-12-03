@@ -154,75 +154,107 @@
       return this.selectNode(node, scroll);
     };
 
-    DomTextMapper.prototype.performUpdateOnNode = function(node, reason, escalating) {
-      var data, newContent, oldIndex, p, parentNode, parentPath, parentPathInfo, path, pathInfo, pathsToDrop, prefix, startTime, _i, _len, _ref,
-        _this = this;
+    DomTextMapper.prototype._performUpdateOnNode = function(node, reason) {
+      var content, corpusChanged, data, oldContent, oldEnd, oldIndex, oldStart, p, parentPath, parentPathInfo, path, pathInfo, pathsToDrop, prefix, startTime, _i, _len;
       if (reason == null) {
         reason = "(no reason)";
       }
-      if (escalating == null) {
-        escalating = false;
-      }
-      if (node == null) {
+      if (!node) {
         throw new Error("Called performUpdate with a null node!");
       }
-      if (this.path == null) {
+      if (!this.path) {
         return;
-      }
-      startTime = this.timestamp();
-      if (!escalating) {
-        this.saveSelection();
       }
       path = this.getPathTo(node);
       pathInfo = this.path[path];
-      if (pathInfo == null) {
-        this.performUpdateOnNode(node.parentNode, "Escalated from " + reason, true);
-        if (!escalating) {
-          this.restoreSelection();
-        }
-        return;
+      while (!pathInfo) {
+        this.log("We don't have any data about the node @", this.path, ". Moving up.");
+        node = node.parentNode;
+        path = this.getPathTo(node);
+        pathInfo = this.path[path];
       }
-      newContent = this.getNodeContent(node, false);
-      if (pathInfo.node === node && pathInfo.content === newContent) {
-        prefix = path + "/";
-        pathsToDrop = p;
-        pathsToDrop = [];
+      startTime = this.timestamp();
+      this.saveSelection();
+      oldContent = pathInfo.content;
+      content = this.getNodeContent(node, false);
+      corpusChanged = oldContent !== content;
+      prefix = path + "/";
+      pathsToDrop = (function() {
+        var _ref, _results;
         _ref = this.path;
+        _results = [];
         for (p in _ref) {
           data = _ref[p];
           if (this.stringStartsWith(p, prefix)) {
-            pathsToDrop.push(p);
+            _results.push(p);
           }
         }
-        for (_i = 0, _len = pathsToDrop.length; _i < _len; _i++) {
-          p = pathsToDrop[_i];
-          delete this.path[p];
-        }
-        this.traverseSubTree(node, path);
-        if (pathInfo.node === this.pathStartNode) {
-          this.collectPositions(node, path, null, 0, 0);
-        } else {
-          parentPath = this.parentPath(path);
-          parentPathInfo = this.path[parentPath];
-          if (parentPathInfo == null) {
-            throw new Error("While performing update on node " + path + ", no path info found for parent path: " + parentPath);
-          }
-          oldIndex = node === node.parentNode.firstChild ? 0 : this.path[this.getPathTo(node.previousSibling)].end - parentPathInfo.start;
-          this.collectPositions(node, path, parentPathInfo.content, parentPathInfo.start, oldIndex);
-        }
+        return _results;
+      }).call(this);
+      if (corpusChanged) {
+        pathsToDrop.push(path);
+        oldStart = pathInfo.start;
+        oldEnd = pathInfo.end;
+      }
+      for (_i = 0, _len = pathsToDrop.length; _i < _len; _i++) {
+        p = pathsToDrop[_i];
+        delete this.path[p];
+      }
+      if (corpusChanged) {
+        this._alterAncestorsMappingData(node, path, oldStart, oldEnd, content);
+        this._alterSiblingsMappingData(node, oldStart, oldEnd, content);
+      }
+      this.traverseSubTree(node, path);
+      if (node === this.pathStartNode) {
+        this.log("Ended up rescanning the whole doc.");
+        this.collectPositions(node, path, null, 0, 0);
       } else {
-        if (pathInfo.node !== this.pathStartNode) {
-          parentNode = node.parentNode != null ? node.parentNode : (parentPath = this.parentPath(path), this.lookUpNode(parentPath));
-          this.performUpdateOnNode(parentNode, "escalated from " + reason, true);
-        } else {
-          setTimeout(function() {
-            return _this._corpusChanged();
-          });
+        parentPath = this._parentPath(path);
+        parentPathInfo = this.path[parentPath];
+        oldIndex = node === node.parentNode.firstChild ? 0 : this.path[this.getPathTo(node.previousSibling)].end - parentPathInfo.start;
+        this.collectPositions(node, path, parentPathInfo.content, parentPathInfo.start, oldIndex);
+      }
+      this.restoreSelection();
+      return corpusChanged;
+    };
+
+    DomTextMapper.prototype._alterAncestorsMappingData = function(node, path, oldStart, oldEnd, newContent) {
+      var lengthDelta, opEnd, opStart, pContent, pEnd, pStart, parentPath, parentPathInfo, prefix, suffix;
+      lengthDelta = newContent.length - (oldEnd - oldStart);
+      if (node === this.pathStartNode) {
+        this._ignorePos += lengthDelta;
+        this._corpus = this.getNodeContent(node, false);
+        return;
+      }
+      parentPath = this._parentPath(path);
+      parentPathInfo = this.path[parentPath];
+      opStart = parentPathInfo.start;
+      opEnd = parentPathInfo.end;
+      pStart = oldStart - opStart;
+      pEnd = oldEnd - opStart;
+      pContent = parentPathInfo.content;
+      prefix = pStart ? pContent.slice(0, +(pStart - 1) + 1 || 9e9) : "";
+      suffix = pContent.slice(pEnd);
+      parentPathInfo.content = newContent = prefix + newContent + suffix;
+      parentPathInfo.length += lengthDelta;
+      parentPathInfo.end += lengthDelta;
+      return this._alterAncestorsMappingData(parentPathInfo.node, parentPath, opStart, opEnd, newContent);
+    };
+
+    DomTextMapper.prototype._alterSiblingsMappingData = function(node, oldStart, oldEnd, newContent) {
+      var delta, info, p, _ref, _results;
+      delta = newContent.length - (oldEnd - oldStart);
+      _ref = this.path;
+      _results = [];
+      for (p in _ref) {
+        info = _ref[p];
+        if (!(info.start >= oldEnd)) {
+          continue;
         }
+        info.start += delta;
+        _results.push(info.end += delta);
       }
-      if (!escalating) {
-        return this.restoreSelection();
-      }
+      return _results;
     };
 
     DomTextMapper.prototype.getInfoForPath = function(path) {
@@ -304,7 +336,7 @@
       _ref = this.path;
       for (p in _ref) {
         info = _ref[p];
-        if (info.atomic && this.regions_overlap(info.start, info.end, start, end)) {
+        if (info.atomic && this._regions_overlap(info.start, info.end, start, end)) {
           (function(info) {
             var full, mapping;
             mapping = {
@@ -411,7 +443,7 @@
       return string.slice(string.length - suffix.length, +string.length + 1 || 9e9) === suffix;
     };
 
-    DomTextMapper.prototype.parentPath = function(path) {
+    DomTextMapper.prototype._parentPath = function(path) {
       return path.substr(0, path.lastIndexOf("/"));
     };
 
@@ -513,7 +545,7 @@
       return (this.rootWin.document.getElementsByTagName("body"))[0];
     };
 
-    DomTextMapper.prototype.regions_overlap = function(start1, end1, start2, end2) {
+    DomTextMapper.prototype._regions_overlap = function(start1, end1, start2, end2) {
       return start1 < end2 && start2 < end1;
     };
 
@@ -677,8 +709,8 @@
         return this.expectedContent;
       }
       content = this.getNodeSelectionText(node, shouldRestoreSelection);
-      if ((node === this.pathStartNode) && (this.ignorePos != null)) {
-        return content.slice(0, +(this.ignorePos - 1) + 1 || 9e9);
+      if ((node === this.pathStartNode) && (this._ignorePos != null)) {
+        return content.slice(0, +(this._ignorePos - 1) + 1 || 9e9);
       }
       return content;
     };
@@ -696,8 +728,8 @@
       }
       if (this._isIgnored(node)) {
         pos = parentIndex + index;
-        if (!((this.ignorePos != null) && this.ignorePos < pos)) {
-          this.ignorePos = pos;
+        if (!((this._ignorePos != null) && this._ignorePos < pos)) {
+          this._ignorePos = pos;
         }
         return index;
       }
@@ -762,31 +794,45 @@
       return result;
     };
 
-    DomTextMapper.prototype._testMap = function() {
-      var expected, i, ok, p, _ref, _ref1;
+    DomTextMapper.prototype._testNodeMapping = function(path, info) {
+      var inCorpus, ok1, ok2, realContent;
+      if (info == null) {
+        info = this.path[path];
+      }
+      if (!info) {
+        throw new Error("Could not look up node @ '" + path + "'!");
+      }
+      inCorpus = info.end ? this._corpus.slice(info.start, +(info.end - 1) + 1 || 9e9) : "";
+      realContent = this.getNodeContent(info.node);
+      ok1 = info.content === inCorpus;
+      if (!ok1) {
+        this.log("Mismatch on ", path, ": stored content is", "'" + info.content + "'", ", range in corpus is", "'" + inCorpus + "'");
+      }
+      ok2 = info.content === realContent;
+      if (!ok2) {
+        this.log("Mismatch on ", path, ": stored content is '", info.content, "', actual content is '", realContent, "'.");
+      }
+      return [ok1, ok2];
+    };
+
+    DomTextMapper.prototype._testAllMappings = function() {
+      var i, info, p, path, _ref, _ref1, _results;
       this.log("Verifying map info: was it all properly traversed?");
       _ref = this.path;
       for (i in _ref) {
         p = _ref[i];
         if (p.atomic == null) {
-          this.log(i + " is missing data.");
+          this.log(i, "is missing data.");
         }
       }
-      this.log("Verifying map info: do atomic elements match?");
+      this.log("Verifying map info: do nodes match?");
       _ref1 = this.path;
-      for (i in _ref1) {
-        p = _ref1[i];
-        if (!p.atomic) {
-          continue;
-        }
-        expected = this._corpus.slice(p.start, +(p.end - 1) + 1 || 9e9);
-        ok = p.content === expected;
-        if (!ok) {
-          this.log("Mismatch on " + i + ": content is '" + p.content + "', range in corpus is '" + expected + "'.");
-        }
-        ok;
+      _results = [];
+      for (path in _ref1) {
+        info = _ref1[path];
+        _results.push(this._testNodeMapping(path, info));
       }
-      return null;
+      return _results;
     };
 
     DomTextMapper.prototype.getPageIndex = function() {
@@ -934,7 +980,8 @@
     };
 
     DomTextMapper.prototype._reactToChanges = function(reason, changes, data) {
-      var changedNodes, node, _i, _len, _results;
+      var changedNodes, corpusChanged, node, _i, _len,
+        _this = this;
       if (changes) {
         changes = this._filterChanges(changes);
       }
@@ -942,12 +989,22 @@
         return;
       }
       changedNodes = this._getInvolvedNodes(changes);
-      _results = [];
+      corpusChanged = false;
       for (_i = 0, _len = changedNodes.length; _i < _len; _i++) {
         node = changedNodes[_i];
-        _results.push(this.performUpdateOnNode(node, reason, false, data));
+        if (this._performUpdateOnNode(node, reason, false, data)) {
+          corpusChanged = true;
+        }
       }
-      return _results;
+      if (corpusChanged) {
+        return setTimeout(function() {
+          var event;
+          _this.log("CORPUS HAS CHANGED");
+          event = document.createEvent("UIEvents");
+          event.initUIEvent("corpusChange", true, false, window, 0);
+          return _this.rootNode.dispatchEvent(event);
+        });
+      }
     };
 
     DomTextMapper.prototype._syncState = function(reason, data) {
@@ -983,17 +1040,6 @@
         ]
       });
       return node;
-    };
-
-    DomTextMapper.prototype._corpusChanged = function() {
-      var event;
-      delete this._corpus;
-      delete this.path;
-      delete this.ignorePos;
-      this.scan("CORPUS HAS CHANGED");
-      event = document.createEvent("UIEvents");
-      event.initUIEvent("corpusChange", true, false, window, 0);
-      return this.rootNode.dispatchEvent(event);
     };
 
     return DomTextMapper;

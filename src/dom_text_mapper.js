@@ -879,6 +879,14 @@
       return false;
     };
 
+    DomTextMapper.prototype._isAttributeChangeImportant = function(node, attributeName, oldValue, newValue) {
+      if (this.options.filterAttributeChanges) {
+        return this.options.filterAttributeChanges(node, attributeName, oldValue, newValue);
+      } else {
+        return true;
+      }
+    };
+
     DomTextMapper.prototype._filterChanges = function(changes) {
       var attrName, attributeChanged, attributeChangedCount, elementList, k, list, removed, v, _ref, _ref1, _ref2,
         _this = this;
@@ -903,6 +911,9 @@
         elementList = _ref1[attrName];
         list = elementList.filter(function(element) {
           return !_this._isIgnored(element);
+        });
+        list = list.filter(function(element) {
+          return _this._isAttributeChangeImportant(element, attrName, changes.getOldAttribute(element, attrName), element.getAttribute(attrName));
         });
         if (list.length) {
           attributeChanged[attrName] = list;

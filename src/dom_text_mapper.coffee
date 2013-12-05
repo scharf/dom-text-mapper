@@ -52,6 +52,7 @@ class window.DomTextMapper
     else
       @setRealRoot()
     DomTextMapper.instances += 1
+    @_createSyncAPI()
 
   log: (msg...) ->
     console.log @id, ": ", msg...
@@ -98,6 +99,19 @@ class window.DomTextMapper
   setExpectedContent: (content) ->
     @expectedContent = content
 
+  # This is done when scanning is finished
+  _scanFinished: ->
+    # Delete the flag;
+    delete @_pendingScan
+
+    # Return unless there are callbacks to call
+    return unless @_pendingCallbacks
+
+    # Call all the callbacks, and clear the list
+    for callback in @_pendingCallbacks
+      callback @_syncAPI
+    delete @pending
+
   # Scan the document
   #
   # Traverses the DOM, collects various information, and
@@ -110,17 +124,21 @@ class window.DomTextMapper
   #   node: reference to the DOM node
   #   content: the text content of the node, as rendered by the browser
   #   length: the length of the next content
-  scan: (reason = "unknown reason") ->
+  _scan: (reason = "unknown reason") ->
+    return if @_pendingScan
+    @_pendingScan = true
+
     # Have we ever scanned?
     if @path?
       # Do an incremental update instead
       @_syncState reason
-      return
+
+      # We are done; take care of any callbacks
+      @_scanFinished()
 
     unless @pathStartNode.ownerDocument.body.contains @pathStartNode
       # We cannot map nodes that are not attached.
-#      @log "This is not attached to dom. Exiting."
-      return
+      throw new Error "This node is not attached to dom."
 
     @log "Starting scan, because", reason
     # Forget any recorded changes, we are starting with a clean slate.
@@ -144,8 +162,9 @@ class window.DomTextMapper
 
     @log "Scan took", t2 - startTime, "ms."
 
-    null
- 
+    # We are done; take care of any callbacks
+    @_scanFinished()
+
   # Select the given path (for visual identification),
   # and optionally scroll to it
   selectPath: (path, scroll = false) ->
@@ -367,52 +386,40 @@ class window.DomTextMapper
       info.end += delta
 
   # Return info for a given path in the DOM
-  getInfoForPath: (path) ->
-    @scan "getInfoForPath('" + path + "')"
+  _getInfoForPath: (path) =>
     result = @path[path]
     unless result?
       throw new Error "Found no info for path '" + path + "'!"
     result
 
   # Return info for a given node in the DOM
-  getInfoForNode: (node) ->
+  _getInfoForNode: (node) =>
     unless node?
       throw new Error "Called getInfoForNode(node) with null node!"
-    @getInfoForPath @getPathTo node
+    @_getInfoForPath @getPathTo node
 
   # Get the matching DOM elements for a given set of charRanges
   # (Calles getMappingsForCharRange for each element in the given ist)
-  getMappingsForCharRanges: (charRanges) ->
-    (@getMappingsForCharRange charRange.start, charRange.end) for charRange in charRanges
+  _getMappingsForCharRanges: (charRanges) =>
+    (@_getMappingsForCharRange charRange.start, charRange.end) for charRange in charRanges
 
   # Return the rendered value of a part of the dom.
   # If path is not given, the default path is used.
-  getContentForPath: (path = null) ->
+  _getContentForPath: (path = null) =>
     path ?= @getDefaultPath()
-    @scan "getContentForPath('" + path + "')"
     @path[path].content
 
   # Return the length of the rendered value of a part of the dom.
   # If path is not given, the default path is used.
-  getLengthForPath: (path = null) ->
+  _getLengthForPath: (path = null) =>
     path ?= @getDefaultPath()
-    @cvan "getLengthForPath('" + path + "')"
     @path[path].length
-
-  getDocLength: ->
-    @scan "getDocLength()"
-    @_corpus.length
-
-  getCorpus: ->
-    @scan "getCorpus()"
-    @_corpus
 
   # Get the context that encompasses the given charRange
   # in the rendered text of the document
-  getContextForCharRange: (start, end) ->
+  _getContextForCharRange: (start, end) =>
     if start < 0
       throw Error "Negative range start is invalid!"
-    @scan "getContextForCharRange(" + start + ", " + end + ")"
     if end > @_corpus.length
       throw Error "Range end is after the end of corpus!"
     prefixStart = Math.max 0, start - CONTEXT_LEN
@@ -424,11 +431,9 @@ class window.DomTextMapper
   # 
   # If the "path" argument is supplied, scan is called automatically.
   # (Except if the supplied path is the same as the last scanned path.)
-  getMappingsForCharRange: (start, end) ->
+  _getMappingsForCharRange: (start, end) =>
     unless (start? and end?)
       throw new Error "start and end is required!"
-
-    @scan "getMappingsForCharRange(" + start + ", " + end + ")"
 
 #    @log "Collecting nodes for [" + start + ":" + end + "]"
 
@@ -532,7 +537,30 @@ class window.DomTextMapper
     # Return the result
     sections: [result]
 
+  # Call this fnction to wait for any pending operations
+  ready: (reason, callback) ->
+    unless callback?
+      throw new Error "missing callback!"
+    @_pendingCallbacks ?= []
+    @_pendingCallbacks.push callback
+    @_scan reason
+    null
+
   # ===== Private methods (never call from outside the module) =======
+
+  # Create the _syncAPI field, used by the async API
+  _createSyncAPI: ->
+    @_syncAPI =
+      getInfoForPath: @_getInfoForPath
+      getInfoForNode: @_getInfoForNode
+      getContentForPath: @_getContentForPath
+      getLengthForPath: @_getLengthForPath
+      getDocLength: => @_corpus.length
+      getCorpus: => @_corpus
+      getContextForCharRange: @_getContextForCharRange
+      getMappingsForCharRange: @_getMappingsForCharRange
+      getMappingsForCharRanges: @_getMappingsForCharRanges
+      getPageIndexForPos: @_getPageIndexForPos
 
   timestamp: -> new Date().getTime()
 
@@ -942,7 +970,7 @@ class window.DomTextMapper
   getPageIndex: -> 0
   getPageCount: -> 1
   getPageRoot: -> @rootNode
-  getPageIndexForPos: -> 0
+  _getPageIndexForPos: -> 0
   isPageMapped: -> true
 
   # Change tracking ===================

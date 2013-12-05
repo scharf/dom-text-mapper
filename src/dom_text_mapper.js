@@ -58,6 +58,13 @@
       this.options = options != null ? options : {};
       this._onMutation = __bind(this._onMutation, this);
       this._onChange = __bind(this._onChange, this);
+      this._getMappingsForCharRange = __bind(this._getMappingsForCharRange, this);
+      this._getContextForCharRange = __bind(this._getContextForCharRange, this);
+      this._getLengthForPath = __bind(this._getLengthForPath, this);
+      this._getContentForPath = __bind(this._getContentForPath, this);
+      this._getMappingsForCharRanges = __bind(this._getMappingsForCharRanges, this);
+      this._getInfoForNode = __bind(this._getInfoForNode, this);
+      this._getInfoForPath = __bind(this._getInfoForPath, this);
       this.id = (_ref = this.options.id) != null ? _ref : "d-t-m #" + DomTextMapper.instances;
       if (this.options.rootNode != null) {
         this.setRootNode(this.options.rootNode);
@@ -65,6 +72,7 @@
         this.setRealRoot();
       }
       DomTextMapper.instances += 1;
+      this._createSyncAPI();
     }
 
     DomTextMapper.prototype.log = function() {
@@ -110,17 +118,35 @@
       return this.expectedContent = content;
     };
 
-    DomTextMapper.prototype.scan = function(reason) {
+    DomTextMapper.prototype._scanFinished = function() {
+      var callback, _i, _len, _ref;
+      delete this._pendingScan;
+      if (!this._pendingCallbacks) {
+        return;
+      }
+      _ref = this._pendingCallbacks;
+      for (_i = 0, _len = _ref.length; _i < _len; _i++) {
+        callback = _ref[_i];
+        callback(this._syncAPI);
+      }
+      return delete this.pending;
+    };
+
+    DomTextMapper.prototype._scan = function(reason) {
       var node, path, startTime, t1, t2;
       if (reason == null) {
         reason = "unknown reason";
       }
-      if (this.path != null) {
-        this._syncState(reason);
+      if (this._pendingScan) {
         return;
       }
+      this._pendingScan = true;
+      if (this.path != null) {
+        this._syncState(reason);
+        this._scanFinished();
+      }
       if (!this.pathStartNode.ownerDocument.body.contains(this.pathStartNode)) {
-        return;
+        throw new Error("This node is not attached to dom.");
       }
       this.log("Starting scan, because", reason);
       this.observer.takeSummaries();
@@ -136,7 +162,7 @@
       this.restoreSelection();
       t2 = this.timestamp();
       this.log("Scan took", t2 - startTime, "ms.");
-      return null;
+      return this._scanFinished();
     };
 
     DomTextMapper.prototype.selectPath = function(path, scroll) {
@@ -307,9 +333,8 @@
       return _results;
     };
 
-    DomTextMapper.prototype.getInfoForPath = function(path) {
+    DomTextMapper.prototype._getInfoForPath = function(path) {
       var result;
-      this.scan("getInfoForPath('" + path + "')");
       result = this.path[path];
       if (result == null) {
         throw new Error("Found no info for path '" + path + "'!");
@@ -317,61 +342,48 @@
       return result;
     };
 
-    DomTextMapper.prototype.getInfoForNode = function(node) {
+    DomTextMapper.prototype._getInfoForNode = function(node) {
       if (node == null) {
         throw new Error("Called getInfoForNode(node) with null node!");
       }
-      return this.getInfoForPath(this.getPathTo(node));
+      return this._getInfoForPath(this.getPathTo(node));
     };
 
-    DomTextMapper.prototype.getMappingsForCharRanges = function(charRanges) {
+    DomTextMapper.prototype._getMappingsForCharRanges = function(charRanges) {
       var charRange, _i, _len, _results;
       _results = [];
       for (_i = 0, _len = charRanges.length; _i < _len; _i++) {
         charRange = charRanges[_i];
-        _results.push(this.getMappingsForCharRange(charRange.start, charRange.end));
+        _results.push(this._getMappingsForCharRange(charRange.start, charRange.end));
       }
       return _results;
     };
 
-    DomTextMapper.prototype.getContentForPath = function(path) {
+    DomTextMapper.prototype._getContentForPath = function(path) {
       if (path == null) {
         path = null;
       }
       if (path == null) {
         path = this.getDefaultPath();
       }
-      this.scan("getContentForPath('" + path + "')");
       return this.path[path].content;
     };
 
-    DomTextMapper.prototype.getLengthForPath = function(path) {
+    DomTextMapper.prototype._getLengthForPath = function(path) {
       if (path == null) {
         path = null;
       }
       if (path == null) {
         path = this.getDefaultPath();
       }
-      this.cvan("getLengthForPath('" + path + "')");
       return this.path[path].length;
     };
 
-    DomTextMapper.prototype.getDocLength = function() {
-      this.scan("getDocLength()");
-      return this._corpus.length;
-    };
-
-    DomTextMapper.prototype.getCorpus = function() {
-      this.scan("getCorpus()");
-      return this._corpus;
-    };
-
-    DomTextMapper.prototype.getContextForCharRange = function(start, end) {
+    DomTextMapper.prototype._getContextForCharRange = function(start, end) {
       var prefix, prefixStart, suffix;
       if (start < 0) {
         throw Error("Negative range start is invalid!");
       }
-      this.scan("getContextForCharRange(" + start + ", " + end + ")");
       if (end > this._corpus.length) {
         throw Error("Range end is after the end of corpus!");
       }
@@ -381,13 +393,12 @@
       return [prefix.trim(), suffix.trim()];
     };
 
-    DomTextMapper.prototype.getMappingsForCharRange = function(start, end) {
+    DomTextMapper.prototype._getMappingsForCharRange = function(start, end) {
       var endInfo, endMapping, endNode, endOffset, endPath, info, mappings, p, r, result, startInfo, startMapping, startNode, startOffset, startPath, _ref,
         _this = this;
       if (!((start != null) && (end != null))) {
         throw new Error("start and end is required!");
       }
-      this.scan("getMappingsForCharRange(" + start + ", " + end + ")");
       mappings = [];
       _ref = this.path;
       for (p in _ref) {
@@ -484,6 +495,38 @@
       };
       return {
         sections: [result]
+      };
+    };
+
+    DomTextMapper.prototype.ready = function(reason, callback) {
+      if (callback == null) {
+        throw new Error("missing callback!");
+      }
+      if (this._pendingCallbacks == null) {
+        this._pendingCallbacks = [];
+      }
+      this._pendingCallbacks.push(callback);
+      this._scan(reason);
+      return null;
+    };
+
+    DomTextMapper.prototype._createSyncAPI = function() {
+      var _this = this;
+      return this._syncAPI = {
+        getInfoForPath: this._getInfoForPath,
+        getInfoForNode: this._getInfoForNode,
+        getContentForPath: this._getContentForPath,
+        getLengthForPath: this._getLengthForPath,
+        getDocLength: function() {
+          return _this._corpus.length;
+        },
+        getCorpus: function() {
+          return _this._corpus;
+        },
+        getContextForCharRange: this._getContextForCharRange,
+        getMappingsForCharRange: this._getMappingsForCharRange,
+        getMappingsForCharRanges: this._getMappingsForCharRanges,
+        getPageIndexForPos: this._getPageIndexForPos
       };
     };
 
@@ -904,7 +947,7 @@
       return this.rootNode;
     };
 
-    DomTextMapper.prototype.getPageIndexForPos = function() {
+    DomTextMapper.prototype._getPageIndexForPos = function() {
       return 0;
     };
 

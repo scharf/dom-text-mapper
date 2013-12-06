@@ -195,6 +195,11 @@ class window.DomTextMapper
     # Decide whether we are dealing with a corpus change
     corpusChanged = oldContent isnt content
 
+    #if corpusChanged
+    #  @dmp ?= new DTM_DMPMatcher()
+    #  diff = @dmp.compare oldContent, content
+    #  @log "** Corpus change: ", diff
+
     # === Phase 1: Drop the invalidated data
 
     # @log "Dropping obsolete path info for children..."

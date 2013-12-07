@@ -495,11 +495,16 @@
     };
 
     DomTextMapper.prototype.getPathTo = function(node) {
-      var xpath;
+      var origNode, xpath;
+      if (!(origNode = node)) {
+        throw new Error("Called getPathTo with null node!");
+      }
       xpath = '';
       while (node !== this.rootNode) {
         if (node == null) {
-          throw new Error("Called getPathTo on a node which was not a descendant of @rootNode. " + this.rootNode);
+          this.log("Root node:", this.rootNode);
+          this.log("Wanted node:", origNode);
+          throw new Error("Called getPathTo on a node which was not a descendant of the configured root node.");
         }
         xpath = (this.getPathSegment(node)) + '/' + xpath;
         node = node.parentNode;

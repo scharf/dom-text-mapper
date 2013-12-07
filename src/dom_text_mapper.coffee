@@ -535,10 +535,14 @@ class window.DomTextMapper
     name + (if pos > 1 then "[#{pos}]" else "")
 
   getPathTo: (node) ->
+    unless origNode = node
+      throw new Error "Called getPathTo with null node!"
     xpath = '';
     while node != @rootNode
       unless node?
-        throw new Error "Called getPathTo on a node which was not a descendant of @rootNode. " + @rootNode
+        @log "Root node:", @rootNode
+        @log "Wanted node:", origNode
+        throw new Error "Called getPathTo on a node which was not a descendant of the configured root node."
       xpath = (@getPathSegment node) + '/' + xpath
       node = node.parentNode
     xpath = (if @rootNode.ownerDocument? then './' else '/') + xpath

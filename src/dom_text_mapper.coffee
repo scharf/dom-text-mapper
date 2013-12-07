@@ -251,6 +251,12 @@ class window.DomTextMapper
       oldIndex = if node is node.parentNode.firstChild
         0
       else
+        predecessor = node.previousSibling
+        predecessorPath = @getPathTo predecessor
+        predecessorInfo = @path[predecessorPath]
+        unless predecessorInfo
+          throw new Error "While working on updating '" + path + "', I was trying to look up info about the previous sibling @ '" + predecessorPath + "', but we have none!"
+
         @path[@getPathTo node.previousSibling].end - parentPathInfo.start
 
       # Recursively calculate all the positions

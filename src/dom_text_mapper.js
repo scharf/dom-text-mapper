@@ -155,7 +155,7 @@
     };
 
     DomTextMapper.prototype._performUpdateOnNode = function(node, reason) {
-      var content, corpusChanged, data, oldContent, oldEnd, oldIndex, oldStart, p, parentPath, parentPathInfo, path, pathInfo, pathsToDrop, prefix, startTime, _i, _len;
+      var content, corpusChanged, data, oldContent, oldEnd, oldIndex, oldStart, p, parentPath, parentPathInfo, path, pathInfo, pathsToDrop, predecessor, predecessorInfo, predecessorPath, prefix, startTime, _i, _len;
       if (reason == null) {
         reason = "(no reason)";
       }
@@ -211,7 +211,19 @@
       } else {
         parentPath = this._parentPath(path);
         parentPathInfo = this.path[parentPath];
-        oldIndex = node === node.parentNode.firstChild ? 0 : this.path[this.getPathTo(node.previousSibling)].end - parentPathInfo.start;
+        oldIndex = (function() {
+          if (node === node.parentNode.firstChild) {
+            return 0;
+          } else {
+            predecessor = node.previousSibling;
+            predecessorPath = this.getPathTo(predecessor);
+            predecessorInfo = this.path[predecessorPath];
+            if (!predecessorInfo) {
+              throw new Error("While working on updating '" + path + "', I was trying to look up info about the previous sibling @ '" + predecessorPath + "', but we have none!");
+            }
+            return this.path[this.getPathTo(node.previousSibling)].end - parentPathInfo.start;
+          }
+        }).call(this);
         this.collectPositions(node, path, parentPathInfo.content, parentPathInfo.start, oldIndex);
       }
       this.restoreSelection();

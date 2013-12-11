@@ -39,7 +39,7 @@
 
     DomTextMapper.prototype._onChange = function(event) {
       this.documentChanged();
-      this.performUpdateOnNode(event.srcElement, false, event.data);
+      this.performUpdateOnNode(event.target, false, event.data);
       return this.lastScanned = this.timestamp();
     };
 

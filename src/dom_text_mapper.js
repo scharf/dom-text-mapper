@@ -256,8 +256,14 @@
 
     DomTextMapper.prototype.getContextForCharRange = function(start, end) {
       var prefix, prefixStart, suffix;
+      if (start < 0) {
+        throw Error("Negative range start is invalid!");
+      }
+      if (end > this._corpus.length) {
+        throw Error("Range end is after the end of corpus!");
+      }
       prefixStart = Math.max(0, start - CONTEXT_LEN);
-      prefix = this._corpus.slice(prefixStart, +(start - 1) + 1 || 9e9);
+      prefix = prefixStart ? this._corpus.slice(prefixStart, +(start - 1) + 1 || 9e9) : "";
       suffix = this._corpus.slice(end, +(end + CONTEXT_LEN - 1) + 1 || 9e9);
       return [prefix.trim(), suffix.trim()];
     };
@@ -373,10 +379,16 @@
     };
 
     DomTextMapper.prototype.stringStartsWith = function(string, prefix) {
+      if (!prefix) {
+        throw Error("Requires a non-empty prefix!");
+      }
       return string.slice(0, +(prefix.length - 1) + 1 || 9e9) === prefix;
     };
 
     DomTextMapper.prototype.stringEndsWith = function(string, suffix) {
+      if (!suffix) {
+        throw Error("Requires a non-empty suffix!");
+      }
       return string.slice(string.length - suffix.length, +string.length + 1 || 9e9) === suffix;
     };
 
@@ -503,16 +515,25 @@
     };
 
     DomTextMapper.prototype.saveSelection = function() {
-      var exception, i, sel, _i, _ref;
+      var exception, i, sel;
       if (this.savedSelection != null) {
         this.log("Selection saved at:");
         this.log(this.selectionSaved);
         throw new Error("Selection already saved!");
       }
       sel = this.rootWin.getSelection();
-      for (i = _i = 0, _ref = sel.rangeCount; 0 <= _ref ? _i < _ref : _i > _ref; i = 0 <= _ref ? ++_i : --_i) {
-        this.savedSelection = sel.getRangeAt(i);
-      }
+      this.savedSelection = (function() {
+        var _i, _ref, _results;
+        if (!sel.rangeCount) {
+          return [];
+        } else {
+          _results = [];
+          for (i = _i = 0, _ref = sel.rangeCount; 0 <= _ref ? _i < _ref : _i > _ref; i = 0 <= _ref ? ++_i : --_i) {
+            _results.push(sel.getRangeAt(i));
+          }
+          return _results;
+        }
+      })();
       switch (sel.rangeCount) {
         case 0:
           if (this.savedSelection == null) {

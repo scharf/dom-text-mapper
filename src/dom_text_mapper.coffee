@@ -396,9 +396,13 @@ class window.DomTextMapper
   # Get the context that encompasses the given charRange
   # in the rendered text of the document
   getContextForCharRange: (start, end) ->
+    if start < 0
+      throw Error "Negative range start is invalid!"
+    if end > @_corpus.length
+      throw Error "Range end is after the end of corpus!"
     @scan "getContextForCharRange(" + start + ", " + end + ")"
     prefixStart = Math.max 0, start - CONTEXT_LEN
-    prefix = @_corpus[prefixStart .. start - 1]
+    prefix = if prefixStart then @_corpus[prefixStart .. start - 1] else ""
     suffix = @_corpus[end .. end + CONTEXT_LEN - 1]
     [prefix.trim(), suffix.trim()]
         
@@ -519,9 +523,13 @@ class window.DomTextMapper
   timestamp: -> new Date().getTime()
 
   stringStartsWith: (string, prefix) ->
+    unless prefix
+      throw Error "Requires a non-empty prefix!"
     string[ 0 .. prefix.length - 1 ] is prefix
 
   stringEndsWith: (string, suffix) ->
+    unless suffix
+      throw Error "Requires a non-empty suffix!"
     string[ string.length - suffix.length .. string.length ] is suffix
 
   _parentPath: (path) -> path.substr 0, path.lastIndexOf "/"
@@ -617,7 +625,10 @@ class window.DomTextMapper
       throw new Error "Selection already saved!"
     sel = @rootWin.getSelection()        
 #    @log "Saving selection: " + sel.rangeCount + " ranges."
-    @savedSelection = (sel.getRangeAt i) for i in [0 ... sel.rangeCount]
+    @savedSelection = unless sel.rangeCount
+      []
+    else
+      (sel.getRangeAt i) for i in [0 ... sel.rangeCount]
     switch sel.rangeCount
       when 0 then @savedSelection ?= []
       when 1 then @savedSelection = [ @savedSelection ]
@@ -884,7 +895,7 @@ class window.DomTextMapper
       throw new Error "Could not look up node @ '" + path + "'!"
 
     # Get the range from corpus
-    inCorpus = if info.end
+    inCorpus = if info.end and info.end isnt info.start
       @_corpus[ info.start .. (info.end - 1) ]
     else
       ""

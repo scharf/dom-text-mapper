@@ -65,6 +65,7 @@
     };
 
     PageTextMapperCore.prototype._updateMap = function(info) {
+      info.domMapper.documentChanged();
       return info.domMapper.scan();
     };
 

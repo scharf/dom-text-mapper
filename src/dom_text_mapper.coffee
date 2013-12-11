@@ -281,10 +281,20 @@ class window.DomTextMapper
 
     # Is this the root node?
     if node is @pathStartNode
-      @_ignorePos += lengthDelta
 
       # Update the corpus
-      @_corpus = @getNodeContent node, false
+      @_corpus = if @expectedContent?  # Do we have expected content?
+        @expectedContent               # There not much to calculate, then
+      else                             # No hard-wired result, let's calculate
+        content = @path[path].content  # This is the base we are going to use
+        if @_ignorePos?                # Is there stuff at the end to ignore?
+          @_ignorePos += lengthDelta   # Update the ignore index
+          if @_ignorePos               # Is there anything left?
+            content[ 0 .. @_ignorePos-1 ]  # Return the wanted segment
+          else                         # No, whole text is ignored
+            ""                         # Return an empty string
+        else                           # There is no ignore
+          content                      # We are going to use the whole content
 
       # There are no more ancestors, so return
       return
@@ -331,6 +341,10 @@ class window.DomTextMapper
   _alterSiblingsMappingData: (node, oldStart, oldEnd, newContent) ->
     # Calculate the offset, based on the difference in length
     delta = newContent.length - (oldEnd - oldStart)
+
+    # If the length delta is zero (ie. the old content has the same length
+    # as the new content), we don't have to do anything
+    return unless delta
 
     # Go over all the elements that are later then the changed node
     for p, info of @path when info.start >= oldEnd

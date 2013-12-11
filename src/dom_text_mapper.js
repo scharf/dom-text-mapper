@@ -231,11 +231,10 @@
     };
 
     DomTextMapper.prototype._alterAncestorsMappingData = function(node, path, oldStart, oldEnd, newContent) {
-      var lengthDelta, opEnd, opStart, pContent, pEnd, pStart, parentPath, parentPathInfo, prefix, suffix;
+      var content, lengthDelta, opEnd, opStart, pContent, pEnd, pStart, parentPath, parentPathInfo, prefix, suffix;
       lengthDelta = newContent.length - (oldEnd - oldStart);
       if (node === this.pathStartNode) {
-        this._ignorePos += lengthDelta;
-        this._corpus = this.getNodeContent(node, false);
+        this._corpus = this.expectedContent != null ? this.expectedContent : (content = this.path[path].content, this._ignorePos != null ? (this._ignorePos += lengthDelta, this._ignorePos ? content.slice(0, +(this._ignorePos - 1) + 1 || 9e9) : "") : content);
         return;
       }
       parentPath = this._parentPath(path);
@@ -256,6 +255,9 @@
     DomTextMapper.prototype._alterSiblingsMappingData = function(node, oldStart, oldEnd, newContent) {
       var delta, info, p, _ref, _results;
       delta = newContent.length - (oldEnd - oldStart);
+      if (!delta) {
+        return;
+      }
       _ref = this.path;
       _results = [];
       for (p in _ref) {

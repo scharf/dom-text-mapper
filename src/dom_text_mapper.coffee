@@ -294,7 +294,7 @@ class window.DomTextMapper
         if @_ignorePos?                # Is there stuff at the end to ignore?
           @_ignorePos += lengthDelta   # Update the ignore index
           if @_ignorePos               # Is there anything left?
-            content[ 0 .. @_ignorePos-1 ]  # Return the wanted segment
+            content[ ... @_ignorePos ] # Return the wanted segment
           else                         # No, whole text is ignored
             ""                         # Return an empty string
         else                           # There is no ignore
@@ -320,10 +320,7 @@ class window.DomTextMapper
     # Calculate the changed content
 
     # Get the prefix
-    prefix = if pStart
-      pContent[.. pStart - 1]
-    else
-      ""
+    prefix = pContent[ ... pStart ]
 
     # Get the suffix
     suffix = pContent[pEnd ..]
@@ -406,8 +403,8 @@ class window.DomTextMapper
       throw Error "Range end is after the end of corpus!"
     @scan "getContextForCharRange(" + start + ", " + end + ")"
     prefixStart = Math.max 0, start - CONTEXT_LEN
-    prefix = if prefixStart then @_corpus[prefixStart .. start - 1] else ""
-    suffix = @_corpus[end .. end + CONTEXT_LEN - 1]
+    prefix = @_corpus[ prefixStart ... start ]
+    suffix = @_corpus[ end ... end + CONTEXT_LEN ]
     [prefix.trim(), suffix.trim()]
         
   # Get the matching DOM elements for a given charRange
@@ -476,7 +473,7 @@ class window.DomTextMapper
 
     if mappings.length is 0
       @log "Collecting nodes for [" + start + ":" + end + "]"
-      @log "Should be: '" + @_corpus[ start .. (end-1) ] + "'."
+      @log "Should be: '" + @_corpus[ start ... end ] + "'."
       throw new Error "No mappings found for [" + start + ":" + end + "]!"
 
     mappings = mappings.sort (a, b) -> a.element.start - b.element.start
@@ -529,12 +526,12 @@ class window.DomTextMapper
   stringStartsWith: (string, prefix) ->
     unless prefix
       throw Error "Requires a non-empty prefix!"
-    string[ 0 .. prefix.length - 1 ] is prefix
+    string[ 0 ... prefix.length ] is prefix
 
   stringEndsWith: (string, suffix) ->
     unless suffix
       throw Error "Requires a non-empty suffix!"
-    string[ string.length - suffix.length .. string.length ] is suffix
+    string[ string.length - suffix.length ... string.length ] is suffix
 
   _parentPath: (path) -> path.substr 0, path.lastIndexOf "/"
 
@@ -629,17 +626,10 @@ class window.DomTextMapper
       throw new Error "Selection already saved!"
     sel = @rootWin.getSelection()        
 #    @log "Saving selection: " + sel.rangeCount + " ranges."
-    @savedSelection = unless sel.rangeCount
-      []
-    else
-      (sel.getRangeAt i) for i in [0 ... sel.rangeCount]
-    switch sel.rangeCount
-      when 0 then @savedSelection ?= []
-      when 1 then @savedSelection = [ @savedSelection ]
-    try
-      throw new Error "Selection was saved here"
-    catch exception
-      @selectionSaved = exception.stack
+
+    @savedSelection = ((sel.getRangeAt i) for i in [0 ... sel.rangeCount])
+
+    @selectionSaved = (new Error "selection was saved here").stack
 
   # restore selection
   restoreSelection: ->
@@ -788,7 +778,7 @@ class window.DomTextMapper
       return @expectedContent
     content = @getNodeSelectionText node, shouldRestoreSelection
     if (node is @pathStartNode) and @_ignorePos?
-      return content[ 0 .. @_ignorePos-1 ]
+      return content[ 0 ... @_ignorePos ]
 
     content
 
@@ -825,7 +815,7 @@ class window.DomTextMapper
     pathInfo = @path[path]
     content = pathInfo?.content
 
-    if not content? or content is ""
+    unless content
       # node has no content, not interesting
       pathInfo.start = parentIndex + index
       pathInfo.end = parentIndex + index
@@ -899,8 +889,8 @@ class window.DomTextMapper
       throw new Error "Could not look up node @ '" + path + "'!"
 
     # Get the range from corpus
-    inCorpus = if info.end and info.end isnt info.start
-      @_corpus[ info.start .. (info.end - 1) ]
+    inCorpus = if info.end
+      @_corpus[ info.start ... info.end ]
     else
       ""
 

@@ -234,7 +234,28 @@
       var content, lengthDelta, opEnd, opStart, pContent, pEnd, pStart, parentPath, parentPathInfo, prefix, suffix;
       lengthDelta = newContent.length - (oldEnd - oldStart);
       if (node === this.pathStartNode) {
-        this._corpus = this.expectedContent != null ? this.expectedContent : (content = this.path[path].content, this._ignorePos != null ? (this._ignorePos += lengthDelta, this._ignorePos ? content.slice(0, +(this._ignorePos - 1) + 1 || 9e9) : "") : content);
+        this._corpus = (function() {
+          if (this.expectedContent != null) {
+            return this.expectedContent;
+          } else {
+            if (!this.path[path]) {
+              console.log("We are @ path", path, "but we can't find info about it.");
+              console.log(this.path);
+              throw new Error("Internal error");
+            }
+            content = this.path[path].content;
+            if (this._ignorePos != null) {
+              this._ignorePos += lengthDelta;
+              if (this._ignorePos) {
+                return content.slice(0, +(this._ignorePos - 1) + 1 || 9e9);
+              } else {
+                return "";
+              }
+            } else {
+              return content;
+            }
+          }
+        }).call(this);
         return;
       }
       parentPath = this._parentPath(path);
@@ -783,7 +804,6 @@
       }
       startIndex = parentContent != null ? parentContent.indexOf(content, index) : index;
       if (startIndex === -1) {
-        this.log("Content of this node is not present in content of parent, at path " + path);
         return index;
       }
       endIndex = startIndex + content.length;
@@ -1050,7 +1070,6 @@
       if (corpusChanged) {
         return setTimeout(function() {
           var event;
-          _this.log("CORPUS HAS CHANGED");
           event = document.createEvent("UIEvents");
           event.initUIEvent("corpusChange", true, false, window, 0);
           return _this.rootNode.dispatchEvent(event);

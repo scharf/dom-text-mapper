@@ -286,6 +286,10 @@ class window.DomTextMapper
       @_corpus = if @expectedContent?  # Do we have expected content?
         @expectedContent               # There not much to calculate, then
       else                             # No hard-wired result, let's calculate
+        unless @path[path]
+          console.log "We are @ path", path, "but we can't find info about it."
+          console.log @path
+          throw new Error "Internal error"
         content = @path[path].content  # This is the base we are going to use
         if @_ignorePos?                # Is there stuff at the end to ignore?
           @_ignorePos += lengthDelta   # Update the ignore index
@@ -835,7 +839,7 @@ class window.DomTextMapper
     if startIndex is -1
       # content of node is not present in parent's content - probably hidden,
       # or something similar
-      @log "Content of this node is not present in content of parent, at path " + path
+#      @log "Content of this node is not present in content of parent, at path " + path
 #      @log "(Content: '" + content + "'.)"
 #      console.trace()
       return index
@@ -1093,7 +1097,7 @@ class window.DomTextMapper
 
     # If there was a corpus change, announce it
     if corpusChanged then setTimeout =>
-      @log "CORPUS HAS CHANGED"
+#      @log "CORPUS HAS CHANGED"
       event = document.createEvent "UIEvents"
       event.initUIEvent "corpusChange", true, false, window, 0
       @rootNode.dispatchEvent event

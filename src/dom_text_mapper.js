@@ -263,8 +263,8 @@
         throw Error("Range end is after the end of corpus!");
       }
       prefixStart = Math.max(0, start - CONTEXT_LEN);
-      prefix = prefixStart ? this._corpus.slice(prefixStart, +(start - 1) + 1 || 9e9) : "";
-      suffix = this._corpus.slice(end, +(end + CONTEXT_LEN - 1) + 1 || 9e9);
+      prefix = this._corpus.slice(prefixStart, start);
+      suffix = this._corpus.slice(end, end + CONTEXT_LEN);
       return [prefix.trim(), suffix.trim()];
     };
 
@@ -327,7 +327,7 @@
       }
       if (mappings.length === 0) {
         this.log("Collecting nodes for [" + start + ":" + end + "]");
-        this.log("Should be: '" + this._corpus.slice(start, +(end - 1) + 1 || 9e9) + "'.");
+        this.log("Should be: '" + this._corpus.slice(start, end) + "'.");
         throw new Error("No mappings found for [" + start + ":" + end + "]!");
       }
       mappings = mappings.sort(function(a, b) {
@@ -382,14 +382,14 @@
       if (!prefix) {
         throw Error("Requires a non-empty prefix!");
       }
-      return string.slice(0, +(prefix.length - 1) + 1 || 9e9) === prefix;
+      return string.slice(0, prefix.length) === prefix;
     };
 
     DomTextMapper.prototype.stringEndsWith = function(string, suffix) {
       if (!suffix) {
         throw Error("Requires a non-empty suffix!");
       }
-      return string.slice(string.length - suffix.length, +string.length + 1 || 9e9) === suffix;
+      return string.slice(string.length - suffix.length, string.length) === suffix;
     };
 
     DomTextMapper.prototype.parentPath = function(path) {
@@ -515,7 +515,7 @@
     };
 
     DomTextMapper.prototype.saveSelection = function() {
-      var exception, i, sel;
+      var i, sel;
       if (this.savedSelection != null) {
         this.log("Selection saved at:");
         this.log(this.selectionSaved);
@@ -524,31 +524,13 @@
       sel = this.rootWin.getSelection();
       this.savedSelection = (function() {
         var _i, _ref, _results;
-        if (!sel.rangeCount) {
-          return [];
-        } else {
-          _results = [];
-          for (i = _i = 0, _ref = sel.rangeCount; 0 <= _ref ? _i < _ref : _i > _ref; i = 0 <= _ref ? ++_i : --_i) {
-            _results.push(sel.getRangeAt(i));
-          }
-          return _results;
+        _results = [];
+        for (i = _i = 0, _ref = sel.rangeCount; 0 <= _ref ? _i < _ref : _i > _ref; i = 0 <= _ref ? ++_i : --_i) {
+          _results.push(sel.getRangeAt(i));
         }
+        return _results;
       })();
-      switch (sel.rangeCount) {
-        case 0:
-          if (this.savedSelection == null) {
-            this.savedSelection = [];
-          }
-          break;
-        case 1:
-          this.savedSelection = [this.savedSelection];
-      }
-      try {
-        throw new Error("Selection was saved here");
-      } catch (_error) {
-        exception = _error;
-        return this.selectionSaved = exception.stack;
-      }
+      return this.selectionSaved = (new Error("selection was saved here")).stack;
     };
 
     DomTextMapper.prototype.restoreSelection = function() {
@@ -691,7 +673,7 @@
       }
       pathInfo = this.path[path];
       content = pathInfo != null ? pathInfo.content : void 0;
-      if ((content == null) || content === "") {
+      if (!content) {
         pathInfo.start = parentIndex + index;
         pathInfo.end = parentIndex + index;
         pathInfo.atomic = false;
@@ -768,7 +750,7 @@
         if (!p.atomic) {
           continue;
         }
-        expected = this._corpus.slice(p.start, +(p.end - 1) + 1 || 9e9);
+        expected = this._corpus.slice(p.start, p.end);
         ok = p.content === expected;
         if (!ok) {
           this.log("Mismatch on " + i + ": content is '" + p.content + "', range in corpus is '" + expected + "'.");

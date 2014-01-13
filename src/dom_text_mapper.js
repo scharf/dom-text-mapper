@@ -155,7 +155,7 @@
     };
 
     DomTextMapper.prototype._performUpdateOnNode = function(node, reason) {
-      var content, corpusChanged, data, oldContent, oldEnd, oldIndex, oldStart, p, parentPath, parentPathInfo, path, pathInfo, pathsToDrop, predecessor, predecessorInfo, predecessorPath, prefix, startTime, _i, _len;
+      var content, corpusChanged, data, lengthDelta, oldContent, oldEnd, oldIndex, oldStart, p, parentPath, parentPathInfo, path, pathInfo, pathsToDrop, predecessor, predecessorInfo, predecessorPath, prefix, startTime, _i, _len;
       if (reason == null) {
         reason = "(no reason)";
       }
@@ -178,6 +178,9 @@
       oldContent = pathInfo.content;
       content = this.getNodeContent(node, false);
       corpusChanged = oldContent !== content;
+      if (corpusChanged) {
+        lengthDelta = content.length - oldContent.length;
+      }
       prefix = path + "/";
       pathsToDrop = (function() {
         var _ref, _results;
@@ -201,13 +204,16 @@
         delete this.path[p];
       }
       if (corpusChanged) {
-        this._alterAncestorsMappingData(node, path, oldStart, oldEnd, content);
-        this._alterSiblingsMappingData(node, oldStart, oldEnd, content);
+        if (node !== this.pathStartNode) {
+          this._alterAncestorsMappingData(node, path, oldStart, oldEnd, content);
+          this._alterSiblingsMappingData(node, oldStart, oldEnd, content);
+        }
       }
       this.traverseSubTree(node, path);
       if (node === this.pathStartNode) {
         this.log("Ended up rescanning the whole doc.");
         this.collectPositions(node, path, null, 0, 0);
+        this._updateCorpus(lengthDelta);
       } else {
         parentPath = this._parentPath(path);
         parentPathInfo = this.path[parentPath];
@@ -230,32 +236,41 @@
       return corpusChanged;
     };
 
+    DomTextMapper.prototype._updateCorpus = function(lengthDelta) {
+      var content;
+      if (lengthDelta) {
+
+      } else {
+        lengthDelta = 0;
+      }
+      return this._corpus = (function() {
+        if (this.expectedContent != null) {
+          return this.expectedContent;
+        } else {
+          if (!this.path["."]) {
+            this.log("We can't find info about root.");
+            throw new Error("Internal error");
+          }
+          content = this.path["."].content;
+          if (this._ignorePos != null) {
+            this._ignorePos += lengthDelta;
+            if (this._ignorePos) {
+              return content.slice(0, this._ignorePos);
+            } else {
+              return "";
+            }
+          } else {
+            return content;
+          }
+        }
+      }).call(this);
+    };
+
     DomTextMapper.prototype._alterAncestorsMappingData = function(node, path, oldStart, oldEnd, newContent) {
-      var content, lengthDelta, opEnd, opStart, pContent, pEnd, pStart, parentPath, parentPathInfo, prefix, suffix;
+      var lengthDelta, opEnd, opStart, pContent, pEnd, pStart, parentPath, parentPathInfo, prefix, suffix;
       lengthDelta = newContent.length - (oldEnd - oldStart);
       if (node === this.pathStartNode) {
-        this._corpus = (function() {
-          if (this.expectedContent != null) {
-            return this.expectedContent;
-          } else {
-            if (!this.path[path]) {
-              console.log("We are @ path", path, "but we can't find info about it.");
-              console.log(this.path);
-              throw new Error("Internal error");
-            }
-            content = this.path[path].content;
-            if (this._ignorePos != null) {
-              this._ignorePos += lengthDelta;
-              if (this._ignorePos) {
-                return content.slice(0, this._ignorePos);
-              } else {
-                return "";
-              }
-            } else {
-              return content;
-            }
-          }
-        }).call(this);
+        this._updateCorpus(lengthDelta);
         return;
       }
       parentPath = this._parentPath(path);

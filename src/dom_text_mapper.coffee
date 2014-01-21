@@ -40,7 +40,7 @@ class window.DomTextMapper
 
   USE_TABLE_TEXT_WORKAROUND = true
   USE_EMPTY_TEXT_WORKAROUND = true
-  SELECT_CHILDREN_INSTEAD = ["thead", "tbody", "ol", "a", "caption", "p", "span", "div", "h1", "h2", "h3", "h4", "h5", "h6", "ul", "li", "form"]
+  SELECT_CHILDREN_INSTEAD = ["thead", "tbody", "tfoot", "ol", "a", "caption", "p", "span", "div", "h1", "h2", "h3", "h4", "h5", "h6", "ul", "li", "form"]
   CONTEXT_LEN = 32
 
   @instances: 0

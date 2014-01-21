@@ -144,6 +144,7 @@
       if (this.path != null) {
         this._syncState(reason);
         this._scanFinished();
+        return;
       }
       if (!this.pathStartNode.ownerDocument.body.contains(this.pathStartNode)) {
         throw new Error("This node is not attached to dom.");

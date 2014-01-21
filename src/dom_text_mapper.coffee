@@ -135,6 +135,7 @@ class window.DomTextMapper
 
       # We are done; take care of any callbacks
       @_scanFinished()
+      return
 
     unless @pathStartNode.ownerDocument.body.contains @pathStartNode
       # We cannot map nodes that are not attached.

@@ -1,10 +1,10 @@
 # Common functions for all page-based document mapper modules
-class window.PageTextMapperCore
+class window.PageTextMapperCore extends TextMapperCore
 
   CONTEXT_LEN: 32
 
   # Get the page index for a given character position
-  getPageIndexForPos: (pos) ->
+  _getPageIndexForPos: (pos) =>
     for info in @pageInfo
       if info.start <= pos < info.end
         return info.index
@@ -25,39 +25,63 @@ class window.PageTextMapperCore
       return
 
     # Collect info about the new DOM subtree
-    @_mapPage @pageInfo[index]
+    @_mapPage @pageInfo[index], "page has been rendered"
 
   # Determine whether a given page has been rendered and mapped
   isPageMapped: (index) ->
     return @pageInfo[index]?.domMapper?
 
    # Create the mappings for a given page    
-  _mapPage: (info) ->
+  _mapPage: (info, reason) ->
     info.node = @getRootNodeForPage info.index        
     info.domMapper = new DomTextMapper
       id: "d-t-m for page #" + info.index
       rootNode: info.node
     if @requiresSmartStringPadding
       info.domMapper.setExpectedContent info.content
-    info.domMapper.scan()
-    renderedContent = info.domMapper.getCorpus()
-    if renderedContent isnt info.content
-      console.log "Oops. Mismatch between rendered and extracted text, while mapping page #" + info.index + "!"
-      console.trace()
-      console.log "Rendered: " + renderedContent
-      console.log "Extracted: " + info.content
+    info.domMapper.ready reason, (s) =>
+      renderedContent = s.getCorpus()
+      if renderedContent isnt info.content
+        console.log "Oops. Mismatch between rendered and extracted text, while mapping page #" + info.index + "!"
+        console.trace()
+        console.log "Rendered: " + renderedContent
+        console.log "Extracted: " + info.content
 
-    # Announce the newly available page
-    setTimeout ->
-      event = document.createEvent "UIEvents"
-      event.initUIEvent "docPageMapped", false, false, window, 0
-      event.pageIndex = info.index
-      window.dispatchEvent event
+      info.node.addEventListener "corpusChange", =>
+        console.log "Ooops. Corpus has changed on one of the pages!"
+        console.log "TODO: We should do something about this, to update the global corpus!"
 
-  # Update the mappings for a given page
-  _updateMap: (info) ->
-    #console.log "Updating mappings for page #" + info.index
-    info.domMapper.scan()
+      # Announce the newly available page
+      setTimeout ->
+        event = document.createEvent "UIEvents"
+        event.initUIEvent "docPageMapped", false, false, window, 0
+        event.pageIndex = info.index
+        window.dispatchEvent event
+
+  # Go over the pages, and get them ready
+  _readyAllPages: (reason, callback) ->
+    # This would be a breeze with promises, but we can't use them here,
+    # because we want to keep the dependencies really minimal,
+    # so we are doing it manually.
+
+    # Set initial data
+    pagesToGo = 0
+    cycleOver = false
+    endTriggered = false
+
+    # Go over all the pages
+    @pageInfo.forEach (info, i) =>
+      if @_isPageRendered i
+        pagesToGo++
+        info.domMapper.ready reason, =>
+          pagesToGo--
+          if pagesToGo is 0 and cycleOver and not endTriggered
+            endTriggered = true
+            callback "Done"
+    cycleOver = true
+    unless endTriggered
+      endTriggered = true
+      callback "Done"
 
   # Delete the mappings for a given page
   _unmapPage: (info) ->
@@ -76,9 +100,9 @@ class window.PageTextMapperCore
     window.dispatchEvent event
 
   # Look up info about a give DOM node, uniting page and node info
-  getInfoForNode: (node) ->
-    pageData = @getPageForNode node
-    nodeData = pageData.domMapper.getInfoForNode node
+  _getInfoForNode: (node) =>
+    pageData = @_getPageForNode node
+    nodeData = pageData.domMapper._getInfoForNode node
     # Copy info about the node
     info = {}
     for k,v of nodeData
@@ -90,12 +114,12 @@ class window.PageTextMapperCore
     info
 
   # Return some data about a given character range
-  getMappingsForCharRange: (start, end, pages) ->
+  _getMappingsForCharRange: (start, end, pages) =>
     #console.log "Get mappings for char range [" + start + "; " + end + "], for pages " + pages + "."
 
     # Check out which pages are these on
-    startIndex = @getPageIndexForPos start
-    endIndex = @getPageIndexForPos end
+    startIndex = @_getPageIndexForPos start
+    endIndex = @_getPageIndexForPos end
     #console.log "These are on pages [" + startIndex + ".." + endIndex + "]."
 
     # Function to get the relevant section inside a given page
@@ -107,7 +131,7 @@ class window.PageTextMapperCore
       realEnd = (Math.min info.end, end) - info.start
 
       # Get the range inside the page
-      mappings = info.domMapper.getMappingsForCharRange realStart, realEnd
+      mappings = info.domMapper._getMappingsForCharRange realStart, realEnd
       mappings.sections[0]
 
     # Get the section for all involved pages
@@ -117,15 +141,6 @@ class window.PageTextMapperCore
 
     # Return the data
     sections: sections
-
-  getCorpus: -> @_corpus
-
-  getContextForCharRange: (start, end) ->
-    prefixStart = Math.max 0, start - @CONTEXT_LEN
-    prefixLen = start - prefixStart
-    prefix = @_corpus.substr prefixStart, prefixLen
-    suffix = @_corpus.substr end, @CONTEXT_LEN
-    [prefix.trim(), suffix.trim()]
 
   # Call this in scan, when you have the page contents
   _onHavePageContents: ->
@@ -141,8 +156,8 @@ class window.PageTextMapperCore
       info.end = (pos += info.len + 1)
 
   # Call this in scan, after resolving the promise  
-  _onAfterScan: ->
+  _onAfterTextExtraction: ->
     # Go over the pages again, and map the rendered ones
     @pageInfo.forEach (info, i) =>
       if @_isPageRendered i
-        @_mapPage info
+        @_mapPage info, "text extraction finished"

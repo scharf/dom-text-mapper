@@ -34,14 +34,13 @@ class SubTreeCollection
     @roots = newRoots
 
 
-class window.DomTextMapper
+class window.DomTextMapper extends TextMapperCore
 
   @applicable: -> true
 
   USE_TABLE_TEXT_WORKAROUND = true
   USE_EMPTY_TEXT_WORKAROUND = true
   SELECT_CHILDREN_INSTEAD = ["thead", "tbody", "tfoot", "ol", "a", "caption", "p", "span", "div", "h1", "h2", "h3", "h4", "h5", "h6", "ul", "li", "form"]
-  CONTEXT_LEN = 32
 
   @instances: 0
 
@@ -52,7 +51,13 @@ class window.DomTextMapper
     else
       @setRealRoot()
     DomTextMapper.instances += 1
-    @_createSyncAPI()
+    super
+
+  _createSyncAPI: ->
+    super
+    @_syncAPI.getInfoForPath = @_getInfoForPath
+    @_syncAPI.getContentForPath = @_getContentForPath
+    @_syncAPI.getLengthForPath = @_getLengthForPath
 
   log: (msg...) ->
     console.log @id, ": ", msg...
@@ -99,19 +104,6 @@ class window.DomTextMapper
   setExpectedContent: (content) ->
     @expectedContent = content
 
-  # This is done when scanning is finished
-  _scanFinished: ->
-    # Delete the flag;
-    delete @_pendingScan
-
-    # Return unless there are callbacks to call
-    return unless @_pendingCallbacks
-
-    # Call all the callbacks, and clear the list
-    for callback in @_pendingCallbacks
-      callback @_syncAPI
-    delete @pending
-
   # Scan the document
   #
   # Traverses the DOM, collects various information, and
@@ -124,7 +116,7 @@ class window.DomTextMapper
   #   node: reference to the DOM node
   #   content: the text content of the node, as rendered by the browser
   #   length: the length of the next content
-  _scan: (reason = "unknown reason") ->
+  _startScan: (reason = "unknown reason") ->
     return if @_pendingScan
     @_pendingScan = true
 
@@ -141,7 +133,7 @@ class window.DomTextMapper
       # We cannot map nodes that are not attached.
       throw new Error "This node is not attached to dom."
 
-    @log "Starting scan, because", reason
+    @log "Starting DOM scan, because", reason
     # Forget any recorded changes, we are starting with a clean slate.
     @observer.takeSummaries()
     startTime = @timestamp()
@@ -165,6 +157,19 @@ class window.DomTextMapper
 
     # We are done; take care of any callbacks
     @_scanFinished()
+
+  # This is done when scanning is finished
+  _scanFinished: ->
+    # Delete the flag;
+    delete @_pendingScan
+
+    # Return unless there are callbacks to call
+    return unless @_pendingCallbacks
+
+    # Call all the callbacks, and clear the list
+    for callback in @_pendingCallbacks
+      callback @_syncAPI
+    delete @pending
 
   # Select the given path (for visual identification),
   # and optionally scroll to it
@@ -399,11 +404,6 @@ class window.DomTextMapper
       throw new Error "Called getInfoForNode(node) with null node!"
     @_getInfoForPath @getPathTo node
 
-  # Get the matching DOM elements for a given set of charRanges
-  # (Calles getMappingsForCharRange for each element in the given ist)
-  _getMappingsForCharRanges: (charRanges) =>
-    (@_getMappingsForCharRange charRange.start, charRange.end) for charRange in charRanges
-
   # Return the rendered value of a part of the dom.
   # If path is not given, the default path is used.
   _getContentForPath: (path = null) =>
@@ -416,18 +416,6 @@ class window.DomTextMapper
     path ?= @getDefaultPath()
     @path[path].length
 
-  # Get the context that encompasses the given charRange
-  # in the rendered text of the document
-  _getContextForCharRange: (start, end) =>
-    if start < 0
-      throw Error "Negative range start is invalid!"
-    if end > @_corpus.length
-      throw Error "Range end is after the end of corpus!"
-    prefixStart = Math.max 0, start - CONTEXT_LEN
-    prefix = @_corpus[ prefixStart ... start ]
-    suffix = @_corpus[ end ... end + CONTEXT_LEN ]
-    [prefix.trim(), suffix.trim()]
-        
   # Get the matching DOM elements for a given charRange
   # 
   # If the "path" argument is supplied, scan is called automatically.
@@ -544,26 +532,10 @@ class window.DomTextMapper
       throw new Error "missing callback!"
     @_pendingCallbacks ?= []
     @_pendingCallbacks.push callback
-    @_scan reason
+    @_startScan reason
     null
 
   # ===== Private methods (never call from outside the module) =======
-
-  # Create the _syncAPI field, used by the async API
-  _createSyncAPI: ->
-    @_syncAPI =
-      getInfoForPath: @_getInfoForPath
-      getInfoForNode: @_getInfoForNode
-      getContentForPath: @_getContentForPath
-      getLengthForPath: @_getLengthForPath
-      getDocLength: => @_corpus.length
-      getCorpus: => @_corpus
-      getContextForCharRange: @_getContextForCharRange
-      getMappingsForCharRange: @_getMappingsForCharRange
-      getMappingsForCharRanges: @_getMappingsForCharRanges
-      getPageIndexForPos: @_getPageIndexForPos
-
-  timestamp: -> new Date().getTime()
 
   stringStartsWith: (string, prefix) ->
     unless prefix

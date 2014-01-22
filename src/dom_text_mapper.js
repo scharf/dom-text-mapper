@@ -2,6 +2,8 @@
 (function() {
   var SubTreeCollection,
     __bind = function(fn, me){ return function(){ return fn.apply(me, arguments); }; },
+    __hasProp = {}.hasOwnProperty,
+    __extends = function(child, parent) { for (var key in parent) { if (__hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
     __slice = [].slice,
     __indexOf = [].indexOf || function(item) { for (var i = 0, l = this.length; i < l; i++) { if (i in this && this[i] === item) return i; } return -1; };
 
@@ -36,8 +38,10 @@
 
   })();
 
-  window.DomTextMapper = (function() {
-    var CONTEXT_LEN, SELECT_CHILDREN_INSTEAD, USE_EMPTY_TEXT_WORKAROUND, USE_TABLE_TEXT_WORKAROUND, WHITESPACE;
+  window.DomTextMapper = (function(_super) {
+    var SELECT_CHILDREN_INSTEAD, USE_EMPTY_TEXT_WORKAROUND, USE_TABLE_TEXT_WORKAROUND, WHITESPACE;
+
+    __extends(DomTextMapper, _super);
 
     DomTextMapper.applicable = function() {
       return true;
@@ -49,8 +53,6 @@
 
     SELECT_CHILDREN_INSTEAD = ["thead", "tbody", "tfoot", "ol", "a", "caption", "p", "span", "div", "h1", "h2", "h3", "h4", "h5", "h6", "ul", "li", "form"];
 
-    CONTEXT_LEN = 32;
-
     DomTextMapper.instances = 0;
 
     function DomTextMapper(options) {
@@ -59,10 +61,8 @@
       this._onMutation = __bind(this._onMutation, this);
       this._onChange = __bind(this._onChange, this);
       this._getMappingsForCharRange = __bind(this._getMappingsForCharRange, this);
-      this._getContextForCharRange = __bind(this._getContextForCharRange, this);
       this._getLengthForPath = __bind(this._getLengthForPath, this);
       this._getContentForPath = __bind(this._getContentForPath, this);
-      this._getMappingsForCharRanges = __bind(this._getMappingsForCharRanges, this);
       this._getInfoForNode = __bind(this._getInfoForNode, this);
       this._getInfoForPath = __bind(this._getInfoForPath, this);
       this.id = (_ref = this.options.id) != null ? _ref : "d-t-m #" + DomTextMapper.instances;
@@ -72,8 +72,15 @@
         this.setRealRoot();
       }
       DomTextMapper.instances += 1;
-      this._createSyncAPI();
+      DomTextMapper.__super__.constructor.apply(this, arguments);
     }
+
+    DomTextMapper.prototype._createSyncAPI = function() {
+      DomTextMapper.__super__._createSyncAPI.apply(this, arguments);
+      this._syncAPI.getInfoForPath = this._getInfoForPath;
+      this._syncAPI.getContentForPath = this._getContentForPath;
+      return this._syncAPI.getLengthForPath = this._getLengthForPath;
+    };
 
     DomTextMapper.prototype.log = function() {
       var msg;
@@ -118,21 +125,7 @@
       return this.expectedContent = content;
     };
 
-    DomTextMapper.prototype._scanFinished = function() {
-      var callback, _i, _len, _ref;
-      delete this._pendingScan;
-      if (!this._pendingCallbacks) {
-        return;
-      }
-      _ref = this._pendingCallbacks;
-      for (_i = 0, _len = _ref.length; _i < _len; _i++) {
-        callback = _ref[_i];
-        callback(this._syncAPI);
-      }
-      return delete this.pending;
-    };
-
-    DomTextMapper.prototype._scan = function(reason) {
+    DomTextMapper.prototype._startScan = function(reason) {
       var node, path, startTime, t1, t2;
       if (reason == null) {
         reason = "unknown reason";
@@ -149,7 +142,7 @@
       if (!this.pathStartNode.ownerDocument.body.contains(this.pathStartNode)) {
         throw new Error("This node is not attached to dom.");
       }
-      this.log("Starting scan, because", reason);
+      this.log("Starting DOM scan, because", reason);
       this.observer.takeSummaries();
       startTime = this.timestamp();
       this.saveSelection();
@@ -164,6 +157,20 @@
       t2 = this.timestamp();
       this.log("Scan took", t2 - startTime, "ms.");
       return this._scanFinished();
+    };
+
+    DomTextMapper.prototype._scanFinished = function() {
+      var callback, _i, _len, _ref;
+      delete this._pendingScan;
+      if (!this._pendingCallbacks) {
+        return;
+      }
+      _ref = this._pendingCallbacks;
+      for (_i = 0, _len = _ref.length; _i < _len; _i++) {
+        callback = _ref[_i];
+        callback(this._syncAPI);
+      }
+      return delete this.pending;
     };
 
     DomTextMapper.prototype.selectPath = function(path, scroll) {
@@ -350,16 +357,6 @@
       return this._getInfoForPath(this.getPathTo(node));
     };
 
-    DomTextMapper.prototype._getMappingsForCharRanges = function(charRanges) {
-      var charRange, _i, _len, _results;
-      _results = [];
-      for (_i = 0, _len = charRanges.length; _i < _len; _i++) {
-        charRange = charRanges[_i];
-        _results.push(this._getMappingsForCharRange(charRange.start, charRange.end));
-      }
-      return _results;
-    };
-
     DomTextMapper.prototype._getContentForPath = function(path) {
       if (path == null) {
         path = null;
@@ -378,20 +375,6 @@
         path = this.getDefaultPath();
       }
       return this.path[path].length;
-    };
-
-    DomTextMapper.prototype._getContextForCharRange = function(start, end) {
-      var prefix, prefixStart, suffix;
-      if (start < 0) {
-        throw Error("Negative range start is invalid!");
-      }
-      if (end > this._corpus.length) {
-        throw Error("Range end is after the end of corpus!");
-      }
-      prefixStart = Math.max(0, start - CONTEXT_LEN);
-      prefix = this._corpus.slice(prefixStart, start);
-      suffix = this._corpus.slice(end, end + CONTEXT_LEN);
-      return [prefix.trim(), suffix.trim()];
     };
 
     DomTextMapper.prototype._getMappingsForCharRange = function(start, end) {
@@ -507,32 +490,8 @@
         this._pendingCallbacks = [];
       }
       this._pendingCallbacks.push(callback);
-      this._scan(reason);
+      this._startScan(reason);
       return null;
-    };
-
-    DomTextMapper.prototype._createSyncAPI = function() {
-      var _this = this;
-      return this._syncAPI = {
-        getInfoForPath: this._getInfoForPath,
-        getInfoForNode: this._getInfoForNode,
-        getContentForPath: this._getContentForPath,
-        getLengthForPath: this._getLengthForPath,
-        getDocLength: function() {
-          return _this._corpus.length;
-        },
-        getCorpus: function() {
-          return _this._corpus;
-        },
-        getContextForCharRange: this._getContextForCharRange,
-        getMappingsForCharRange: this._getMappingsForCharRange,
-        getMappingsForCharRanges: this._getMappingsForCharRanges,
-        getPageIndexForPos: this._getPageIndexForPos
-      };
-    };
-
-    DomTextMapper.prototype.timestamp = function() {
-      return new Date().getTime();
     };
 
     DomTextMapper.prototype.stringStartsWith = function(string, prefix) {
@@ -1155,7 +1114,7 @@
 
     return DomTextMapper;
 
-  })();
+  })(TextMapperCore);
 
 }).call(this);
 

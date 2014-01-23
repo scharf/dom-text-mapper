@@ -17,8 +17,6 @@
       return _ref;
     }
 
-    PageTextMapperCore.prototype.CONTEXT_LEN = 32;
-
     PageTextMapperCore.prototype._getPageIndexForPos = function(pos) {
       var info, _i, _len, _ref1;
       _ref1 = this.pageInfo;
@@ -26,7 +24,7 @@
         info = _ref1[_i];
         if ((info.start <= pos && pos < info.end)) {
           return info.index;
-          console.log("Not on page " + info.index);
+          this.log("Not on page " + info.index);
         }
       }
       return -1;
@@ -66,14 +64,14 @@
         var renderedContent;
         renderedContent = s.getCorpus();
         if (renderedContent !== info.content) {
-          console.log("Oops. Mismatch between rendered and extracted text, while mapping page #" + info.index + "!");
+          _this.log("Oops. Mismatch between rendered and extracted text, while mapping page #" + info.index + "!");
           console.trace();
-          console.log("Rendered: " + renderedContent);
-          console.log("Extracted: " + info.content);
+          _this.log("Rendered: " + renderedContent);
+          _this.log("Extracted: " + info.content);
         }
         info.node.addEventListener("corpusChange", function() {
-          console.log("Ooops. Corpus has changed on one of the pages!");
-          return console.log("TODO: We should do something about this, to update the global corpus!");
+          _this.log("Ooops. Corpus has changed on one of the pages!");
+          return _this.log("TODO: We should do something about this, to update the global corpus!");
         });
         return setTimeout(function() {
           var event;
@@ -197,6 +195,14 @@
         if (_this._isPageRendered(i)) {
           return _this._mapPage(info, "text extraction finished");
         }
+      });
+    };
+
+    PageTextMapperCore.prototype._testAllMappings = function() {
+      var _this = this;
+      return this.pageInfo.forEach(function(info, i) {
+        var _ref1;
+        return (_ref1 = info.domMapper) != null ? typeof _ref1._testAllMappings === "function" ? _ref1._testAllMappings() : void 0 : void 0;
       });
     };
 

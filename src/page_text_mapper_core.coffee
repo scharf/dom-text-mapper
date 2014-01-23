@@ -1,14 +1,12 @@
 # Common functions for all page-based document mapper modules
 class window.PageTextMapperCore extends TextMapperCore
 
-  CONTEXT_LEN: 32
-
   # Get the page index for a given character position
   _getPageIndexForPos: (pos) =>
     for info in @pageInfo
       if info.start <= pos < info.end
         return info.index
-        console.log "Not on page " + info.index
+        @log "Not on page " + info.index
     return -1
 
   # Return the root node for a given page
@@ -16,11 +14,11 @@ class window.PageTextMapperCore extends TextMapperCore
 
   # A new page was rendered
   _onPageRendered: (index) =>
-    #console.log "Allegedly rendered page #" + index
+    #@log "Allegedly rendered page #" + index
 
     # Is it really rendered?
     unless @_isPageRendered index
-    #console.log "Page #" + index + " is not really rendered yet."
+    #@log "Page #" + index + " is not really rendered yet."
       setTimeout (=> @_onPageRendered index), 1000
       return
 
@@ -42,14 +40,14 @@ class window.PageTextMapperCore extends TextMapperCore
     info.domMapper.ready reason, (s) =>
       renderedContent = s.getCorpus()
       if renderedContent isnt info.content
-        console.log "Oops. Mismatch between rendered and extracted text, while mapping page #" + info.index + "!"
+        @log "Oops. Mismatch between rendered and extracted text, while mapping page #" + info.index + "!"
         console.trace()
-        console.log "Rendered: " + renderedContent
-        console.log "Extracted: " + info.content
+        @log "Rendered: " + renderedContent
+        @log "Extracted: " + info.content
 
       info.node.addEventListener "corpusChange", =>
-        console.log "Ooops. Corpus has changed on one of the pages!"
-        console.log "TODO: We should do something about this, to update the global corpus!"
+        @log "Ooops. Corpus has changed on one of the pages!"
+        @log "TODO: We should do something about this, to update the global corpus!"
 
       # Announce the newly available page
       setTimeout ->
@@ -115,12 +113,12 @@ class window.PageTextMapperCore extends TextMapperCore
 
   # Return some data about a given character range
   _getMappingsForCharRange: (start, end, pages) =>
-    #console.log "Get mappings for char range [" + start + "; " + end + "], for pages " + pages + "."
+    #@log "Get mappings for char range [" + start + "; " + end + "], for pages " + pages + "."
 
     # Check out which pages are these on
     startIndex = @_getPageIndexForPos start
     endIndex = @_getPageIndexForPos end
-    #console.log "These are on pages [" + startIndex + ".." + endIndex + "]."
+    #@log "These are on pages [" + startIndex + ".." + endIndex + "]."
 
     # Function to get the relevant section inside a given page
     getSection = (index) =>
@@ -161,3 +159,8 @@ class window.PageTextMapperCore extends TextMapperCore
     @pageInfo.forEach (info, i) =>
       if @_isPageRendered i
         @_mapPage info, "text extraction finished"
+
+  # Test all the mappings on all pages
+  _testAllMappings: ->
+    @pageInfo.forEach (info, i) =>
+      info.domMapper?._testAllMappings?()

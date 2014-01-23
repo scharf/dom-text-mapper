@@ -4,7 +4,6 @@
     __bind = function(fn, me){ return function(){ return fn.apply(me, arguments); }; },
     __hasProp = {}.hasOwnProperty,
     __extends = function(child, parent) { for (var key in parent) { if (__hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
-    __slice = [].slice,
     __indexOf = [].indexOf || function(item) { for (var i = 0, l = this.length; i < l; i++) { if (i in this && this[i] === item) return i; } return -1; };
 
   SubTreeCollection = (function() {
@@ -65,14 +64,13 @@
       this._getContentForPath = __bind(this._getContentForPath, this);
       this._getInfoForNode = __bind(this._getInfoForNode, this);
       this._getInfoForPath = __bind(this._getInfoForPath, this);
-      this.id = (_ref = this.options.id) != null ? _ref : "d-t-m #" + DomTextMapper.instances;
+      DomTextMapper.__super__.constructor.call(this, (_ref = this.options.id) != null ? _ref : "d-t-m #" + DomTextMapper.instances);
       if (this.options.rootNode != null) {
         this.setRootNode(this.options.rootNode);
       } else {
         this.setRealRoot();
       }
       DomTextMapper.instances += 1;
-      DomTextMapper.__super__.constructor.apply(this, arguments);
     }
 
     DomTextMapper.prototype._createSyncAPI = function() {
@@ -80,12 +78,6 @@
       this._syncAPI.getInfoForPath = this._getInfoForPath;
       this._syncAPI.getContentForPath = this._getContentForPath;
       return this._syncAPI.getLengthForPath = this._getLengthForPath;
-    };
-
-    DomTextMapper.prototype.log = function() {
-      var msg;
-      msg = 1 <= arguments.length ? __slice.call(arguments, 0) : [];
-      return console.log.apply(console, [this.id, ": "].concat(__slice.call(msg)));
     };
 
     DomTextMapper.prototype.setRootNode = function(rootNode) {
@@ -126,7 +118,7 @@
     };
 
     DomTextMapper.prototype._startScan = function(reason) {
-      var node, path, startTime, t1, t2;
+      var node, path, startTime;
       if (reason == null) {
         reason = "unknown reason";
       }
@@ -142,35 +134,17 @@
       if (!this.pathStartNode.ownerDocument.body.contains(this.pathStartNode)) {
         throw new Error("This node is not attached to dom.");
       }
-      this.log("Starting DOM scan, because", reason);
       this.observer.takeSummaries();
       startTime = this.timestamp();
       this.saveSelection();
       this.path = {};
       this.traverseSubTree(this.pathStartNode, this.getDefaultPath());
-      t1 = this.timestamp();
       path = this.getPathTo(this.pathStartNode);
       node = this.path[path].node;
       this.collectPositions(node, path, null, 0, 0);
       this._corpus = this.getNodeContent(this.path[path].node, false);
       this.restoreSelection();
-      t2 = this.timestamp();
-      this.log("Scan took", t2 - startTime, "ms.");
       return this._scanFinished();
-    };
-
-    DomTextMapper.prototype._scanFinished = function() {
-      var callback, _i, _len, _ref;
-      delete this._pendingScan;
-      if (!this._pendingCallbacks) {
-        return;
-      }
-      _ref = this._pendingCallbacks;
-      for (_i = 0, _len = _ref.length; _i < _len; _i++) {
-        callback = _ref[_i];
-        callback(this._syncAPI);
-      }
-      return delete this.pending;
     };
 
     DomTextMapper.prototype.selectPath = function(path, scroll) {
@@ -351,6 +325,7 @@
     };
 
     DomTextMapper.prototype._getInfoForNode = function(node) {
+      this._startScan("getInfoForNode()");
       if (node == null) {
         throw new Error("Called getInfoForNode(node) with null node!");
       }
@@ -380,6 +355,7 @@
     DomTextMapper.prototype._getMappingsForCharRange = function(start, end) {
       var endInfo, endMapping, endNode, endOffset, endPath, info, mappings, p, r, result, startInfo, startMapping, startNode, startOffset, startPath, _ref,
         _this = this;
+      this._startScan("getMappingsForCharRange()");
       if (!((start != null) && (end != null))) {
         throw new Error("start and end is required!");
       }
@@ -733,6 +709,9 @@
       var dc, displayEnd, displayIndex, displayStart, displayText, sc, sourceEnd, sourceIndex, sourceStart, sourceText;
       sourceText = match.element.node.data.replace(/\n/g, " ");
       displayText = match.element.content;
+      if (displayText.length > sourceText.length) {
+        throw new Error("Invalid match at" + match.element.path + ": sourceText is '" + sourceText + "'," + " displayText is '" + displayText + "'.");
+      }
       displayStart = match.start != null ? match.start : 0;
       displayEnd = match.end != null ? match.end : displayText.length;
       if (displayEnd === 0) {

@@ -45,22 +45,18 @@ class window.DomTextMapper extends TextMapperCore
   @instances: 0
 
   constructor: (@options = {})->
-    @id = @options.id ? "d-t-m #" + DomTextMapper.instances
+    super(@options.id ? "d-t-m #" + DomTextMapper.instances)
     if @options.rootNode?
       @setRootNode @options.rootNode
     else
       @setRealRoot()
     DomTextMapper.instances += 1
-    super
 
   _createSyncAPI: ->
     super
     @_syncAPI.getInfoForPath = @_getInfoForPath
     @_syncAPI.getContentForPath = @_getContentForPath
     @_syncAPI.getLengthForPath = @_getLengthForPath
-
-  log: (msg...) ->
-    console.log @id, ": ", msg...
 
   # ===== Public methods =======
 
@@ -133,14 +129,14 @@ class window.DomTextMapper extends TextMapperCore
       # We cannot map nodes that are not attached.
       throw new Error "This node is not attached to dom."
 
-    @log "Starting DOM scan, because", reason
+#    @log "Starting DOM scan, because", reason
     # Forget any recorded changes, we are starting with a clean slate.
     @observer.takeSummaries()
     startTime = @timestamp()
     @saveSelection()
     @path = {}
     @traverseSubTree @pathStartNode, @getDefaultPath()
-    t1 = @timestamp()
+#    t1 = @timestamp()
 #    @log "Phase I (Path traversal) took " + (t1 - startTime) + " ms."
 
     path = @getPathTo @pathStartNode
@@ -150,26 +146,13 @@ class window.DomTextMapper extends TextMapperCore
     @restoreSelection()
 #    @log "Corpus is: " + @_corpus
 
-    t2 = @timestamp()    
+#    t2 = @timestamp()
 #    @log "Phase II (offset calculation) took " + (t2 - t1) + " ms."
 
-    @log "Scan took", t2 - startTime, "ms."
+#    @log "Scan took", t2 - startTime, "ms."
 
     # We are done; take care of any callbacks
     @_scanFinished()
-
-  # This is done when scanning is finished
-  _scanFinished: ->
-    # Delete the flag;
-    delete @_pendingScan
-
-    # Return unless there are callbacks to call
-    return unless @_pendingCallbacks
-
-    # Call all the callbacks, and clear the list
-    for callback in @_pendingCallbacks
-      callback @_syncAPI
-    delete @pending
 
   # Select the given path (for visual identification),
   # and optionally scroll to it
@@ -400,6 +383,7 @@ class window.DomTextMapper extends TextMapperCore
 
   # Return info for a given node in the DOM
   _getInfoForNode: (node) =>
+    @_startScan "getInfoForNode()"
     unless node?
       throw new Error "Called getInfoForNode(node) with null node!"
     @_getInfoForPath @getPathTo node
@@ -421,6 +405,7 @@ class window.DomTextMapper extends TextMapperCore
   # If the "path" argument is supplied, scan is called automatically.
   # (Except if the supplied path is the same as the last scanned path.)
   _getMappingsForCharRange: (start, end) =>
+    @_startScan "getMappingsForCharRange()"
     unless (start? and end?)
       throw new Error "start and end is required!"
 
@@ -751,6 +736,10 @@ class window.DomTextMapper extends TextMapperCore
     # what gets displayed, when the node is processed by the browser.
     displayText = match.element.content
 #    @log "displayText is '" + displayText + "'"
+
+    if displayText.length > sourceText.length
+      throw new Error "Invalid match at" + match.element.path + ": sourceText is '" + sourceText + "'," +
+        " displayText is '" + displayText + "'."
 
     # The selected charRange in displayText.
     displayStart = if match.start? then match.start else 0
@@ -1111,11 +1100,17 @@ class window.DomTextMapper extends TextMapperCore
   # Bring the our data up to date
   _syncState: (reason = "i am in the mood", data) ->
 
+#    @log "Syncing state, because", reason
+#    t0 = @timestamp()
+
     # Get the changes from the observer
     summaries = @observer.takeSummaries()
 
 #    if summaries # react to them
     @_reactToChanges "SyncState for " + reason, summaries?[0], data
+
+#    t1 = @timestamp()
+#    @log "State synced in", t1-t0, "ms."
 
   # Change handler, called when we receive a change notification
   _onChange: (event) =>

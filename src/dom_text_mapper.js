@@ -4,7 +4,8 @@
     __bind = function(fn, me){ return function(){ return fn.apply(me, arguments); }; },
     __hasProp = {}.hasOwnProperty,
     __extends = function(child, parent) { for (var key in parent) { if (__hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
-    __indexOf = [].indexOf || function(item) { for (var i = 0, l = this.length; i < l; i++) { if (i in this && this[i] === item) return i; } return -1; };
+    __indexOf = [].indexOf || function(item) { for (var i = 0, l = this.length; i < l; i++) { if (i in this && this[i] === item) return i; } return -1; },
+    __slice = [].slice;
 
   SubTreeCollection = (function() {
     function SubTreeCollection() {
@@ -118,7 +119,7 @@
     };
 
     DomTextMapper.prototype._startScan = function(reason) {
-      var node, path, startTime;
+      var node, path, startTime, t1, t2;
       if (reason == null) {
         reason = "unknown reason";
       }
@@ -134,16 +135,22 @@
       if (!this.pathStartNode.ownerDocument.body.contains(this.pathStartNode)) {
         throw new Error("This node is not attached to dom.");
       }
+      this.log("Starting DOM scan, because", reason);
       this.observer.takeSummaries();
       startTime = this.timestamp();
       this.saveSelection();
       this.path = {};
       this.traverseSubTree(this.pathStartNode, this.getDefaultPath());
+      t1 = this.timestamp();
+      this.log("Phase I (Path traversal) took " + (t1 - startTime) + " ms.");
       path = this.getPathTo(this.pathStartNode);
       node = this.path[path].node;
       this.collectPositions(node, path, null, 0, 0);
       this._corpus = this.getNodeContent(this.path[path].node, false);
       this.restoreSelection();
+      t2 = this.timestamp();
+      this.log("Phase II (offset calculation) took " + (t2 - t1) + " ms.");
+      this.log("Scan took", t2 - startTime, "ms.");
       return this._scanFinished();
     };
 
@@ -163,7 +170,7 @@
     };
 
     DomTextMapper.prototype._performUpdateOnNode = function(node, reason) {
-      var content, corpusChanged, data, lengthDelta, oldContent, oldEnd, oldIndex, oldStart, p, parentPath, parentPathInfo, path, pathInfo, pathsToDrop, predecessor, predecessorInfo, predecessorPath, prefix, startTime, _i, _len;
+      var content, corpusChanged, data, diff, lengthDelta, oldContent, oldEnd, oldIndex, oldStart, p, parentPath, parentPathInfo, path, pathInfo, pathsToDrop, predecessor, predecessorInfo, predecessorPath, prefix, startTime, _i, _len;
       if (reason == null) {
         reason = "(no reason)";
       }
@@ -176,7 +183,7 @@
       path = this.getPathTo(node);
       pathInfo = this.path[path];
       while (!pathInfo) {
-        this.log("We don't have any data about the node @", this.path, ". Moving up.");
+        this.log("We don't have any data about the node @", path, ". Moving up.");
         node = node.parentNode;
         path = this.getPathTo(node);
         pathInfo = this.path[path];
@@ -188,6 +195,12 @@
       corpusChanged = oldContent !== content;
       if (corpusChanged) {
         lengthDelta = content.length - oldContent.length;
+        if (this.dmp == null) {
+          this.dmp = new DTM_DMPMatcher();
+        }
+        diff = this.dmp.compare(oldContent, content, true);
+        this.log("** Corpus change (at", path, "):", diff.diffExplanation);
+        this.log("Remaining corpus (at", path, "):", content);
       }
       prefix = path + "/";
       pathsToDrop = (function() {
@@ -240,6 +253,7 @@
         }).call(this);
         this.collectPositions(node, path, parentPathInfo.content, parentPathInfo.start, oldIndex);
       }
+      this.log("Data update took " + (this.timestamp() - startTime) + " ms.");
       this.restoreSelection();
       return corpusChanged;
     };
@@ -907,13 +921,16 @@
     };
 
     DomTextMapper.prototype._isIgnored = function(node) {
-      var container, _i, _len, _ref;
+      var container, _i, _len, _ref, _ref1;
       _ref = this._getIgnoredParts();
       for (_i = 0, _len = _ref.length; _i < _len; _i++) {
         container = _ref[_i];
         if (container.contains(node)) {
           return true;
         }
+      }
+      if (node.nodeType === Node.ELEMENT_NODE && ((_ref1 = node.tagName.toLowerCase()) === "canvas" || _ref1 === "script")) {
+        return true;
       }
       return false;
     };
@@ -981,26 +998,37 @@
       return changes;
     };
 
+    DomTextMapper.prototype._addToTrees = function() {
+      var data, node, reason, trees;
+      trees = arguments[0], node = arguments[1], reason = arguments[2], data = 4 <= arguments.length ? __slice.call(arguments, 3) : [];
+      trees.add(node);
+      if (node === this.pathStartNode) {
+        return this.log.apply(this, ["Added change on root node, because", reason].concat(__slice.call(data)));
+      } else {
+        return console.log.apply(console, ["Added node", node, "because", reason].concat(__slice.call(data)));
+      }
+    };
+
     DomTextMapper.prototype._getInvolvedNodes = function(changes) {
       var k, list, n, parent, trees, _i, _j, _k, _l, _len, _len1, _len2, _len3, _len4, _len5, _m, _n, _ref, _ref1, _ref2, _ref3, _ref4, _ref5;
       trees = new SubTreeCollection();
       _ref = changes.added;
       for (_i = 0, _len = _ref.length; _i < _len; _i++) {
         n = _ref[_i];
-        trees.add(n.parentNode);
+        this._addToTrees(trees, n.parentNode, "a child was added", n);
       }
       _ref1 = changes.attributeChanged;
       for (k in _ref1) {
         list = _ref1[k];
         for (_j = 0, _len1 = list.length; _j < _len1; _j++) {
           n = list[_j];
-          trees.add(n);
+          this._addToTrees(trees, n, "attribute changed", k);
         }
       }
       _ref2 = changes.characterDataChanged;
       for (_k = 0, _len2 = _ref2.length; _k < _len2; _k++) {
         n = _ref2[_k];
-        trees.add(n);
+        this._addToTrees(trees, n, "data content changed");
       }
       _ref3 = changes.removed;
       for (_l = 0, _len3 = _ref3.length; _l < _len3; _l++) {
@@ -1009,22 +1037,22 @@
         while ((__indexOf.call(changes.removed, parent) >= 0) || (__indexOf.call(changes.reparented, parent) >= 0)) {
           parent = changes.getOldParentNode(parent);
         }
-        trees.add(parent);
+        this._addToTrees(trees, n, "a child was removed");
       }
       _ref4 = changes.reordered;
       for (_m = 0, _len4 = _ref4.length; _m < _len4; _m++) {
         n = _ref4[_m];
-        trees.add(n.parentNode);
+        this._addToTrees(trees, n.parentNode, "childred were reordered");
       }
       _ref5 = changes.reparented;
       for (_n = 0, _len5 = _ref5.length; _n < _len5; _n++) {
         n = _ref5[_n];
-        trees.add(n.parentNode);
+        this._addToTrees(trees, n.parentNode, "reparented node landed here");
         parent = n;
         while ((__indexOf.call(changes.removed, parent) >= 0) || (__indexOf.call(changes.reparented, parent) >= 0)) {
           parent = changes.getOldParentNode(parent);
         }
-        trees.add(parent);
+        this._addToTrees(trees, parent, "child was reparented from here");
       }
       return trees.roots;
     };
@@ -1038,6 +1066,7 @@
       if (!changes) {
         return;
       }
+      this.log("=== Collecting changes. ===");
       changedNodes = this._getInvolvedNodes(changes);
       corpusChanged = false;
       for (_i = 0, _len = changedNodes.length; _i < _len; _i++) {
@@ -1046,6 +1075,7 @@
           corpusChanged = true;
         }
       }
+      this.log("=== Finished reacting to changes. ===");
       if (corpusChanged) {
         return setTimeout(function() {
           var event;

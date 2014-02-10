@@ -129,15 +129,15 @@ class window.DomTextMapper extends TextMapperCore
       # We cannot map nodes that are not attached.
       throw new Error "This node is not attached to dom."
 
-#    @log "Starting DOM scan, because", reason
+    @log "Starting DOM scan, because", reason
     # Forget any recorded changes, we are starting with a clean slate.
     @observer.takeSummaries()
     startTime = @timestamp()
     @saveSelection()
     @path = {}
     @traverseSubTree @pathStartNode, @getDefaultPath()
-#    t1 = @timestamp()
-#    @log "Phase I (Path traversal) took " + (t1 - startTime) + " ms."
+    t1 = @timestamp()
+    @log "Phase I (Path traversal) took " + (t1 - startTime) + " ms."
 
     path = @getPathTo @pathStartNode
     node = @path[path].node
@@ -146,10 +146,10 @@ class window.DomTextMapper extends TextMapperCore
     @restoreSelection()
 #    @log "Corpus is: " + @_corpus
 
-#    t2 = @timestamp()
-#    @log "Phase II (offset calculation) took " + (t2 - t1) + " ms."
+    t2 = @timestamp()
+    @log "Phase II (offset calculation) took " + (t2 - t1) + " ms."
 
-#    @log "Scan took", t2 - startTime, "ms."
+    @log "Scan took", t2 - startTime, "ms."
 
     # We are done; take care of any callbacks
     @_scanFinished()
@@ -184,7 +184,7 @@ class window.DomTextMapper extends TextMapperCore
     # Do we have data about this node?
     while not pathInfo
       # If not, go up one level.
-      @log "We don't have any data about the node @", @path, ". Moving up."
+      @log "We don't have any data about the node @", path, ". Moving up."
       node = node.parentNode
       path = @getPathTo node
       pathInfo = @path[path]
@@ -207,10 +207,10 @@ class window.DomTextMapper extends TextMapperCore
 
     if corpusChanged
       lengthDelta = content.length - oldContent.length
-      #@dmp ?= new DTM_DMPMatcher()
-      #diff = @dmp.compare oldContent, content, true
-      #@log "** Corpus change (at", path, "):", diff.diffExplanation
-      #@log "Remaining corpus (at", path, "):", content
+      @dmp ?= new DTM_DMPMatcher()
+      diff = @dmp.compare oldContent, content, true
+      @log "** Corpus change (at", path, "):", diff.diffExplanation
+      @log "Remaining corpus (at", path, "):", content
 
     # === Phase 1: Drop the invalidated data
 
@@ -277,7 +277,7 @@ class window.DomTextMapper extends TextMapperCore
       @collectPositions node, path, parentPathInfo.content,
           parentPathInfo.start, oldIndex
         
-    #@log "Data update took " + (@timestamp() - startTime) + " ms."
+    @log "Data update took " + (@timestamp() - startTime) + " ms."
 
     # Restore the selection
     @restoreSelection()
@@ -953,6 +953,10 @@ class window.DomTextMapper extends TextMapperCore
   _isIgnored: (node) ->
     for container in @_getIgnoredParts()
       return true if container.contains node
+    if node.nodeType is Node.ELEMENT_NODE and
+      node.tagName.toLowerCase() in ["canvas", "script"]
+        return true
+
     return false
 
   # Determine whether an attribute change has to be taken seriously
@@ -1027,40 +1031,53 @@ class window.DomTextMapper extends TextMapperCore
 
     changes
 
+  _addToTrees: (trees, node, reason, data...) ->
+    trees.add node
+    if node is @pathStartNode
+      @log "Added change on root node, because", reason, data...
+    else
+      console.log "Added node", node, "because", reason, data...
+
   # Callect all nodes involved in any of the passed changes
   _getInvolvedNodes: (changes) ->
     trees = new SubTreeCollection()
 
     # Collect the parents of the added nodes
-    trees.add n.parentNode for n in changes.added
+    for n in changes.added
+      @_addToTrees trees, n.parentNode, "a child was added", n
 
     # Collect attribute changed nodes
     for k, list of changes.attributeChanged
-      trees.add n for n in list
+      for n in list
+        @_addToTrees trees, n, "attribute changed", k
 
     # Collect character data changed nodes
-    trees.add n for n in changes.characterDataChanged
+#    trees.add n for n in changes.characterDataChanged
+    for n in changes.characterDataChanged
+      @_addToTrees trees, n, "data content changed"
 
     # Collect the non-removed parents of removed nodes
     for n in changes.removed
       parent = n
       while (parent in changes.removed) or (parent in changes.reparented)
         parent = changes.getOldParentNode parent
-      trees.add parent
+      @_addToTrees trees, n, "a child was removed"
 
     # Collect the parents of reordered nodes
-    trees.add n.parentNode for n in changes.reordered
+#    trees.add n.parentNode for n in changes.reordered
+    for n in changes.reordered
+      @_addToTrees trees, n.parentNode, "childred were reordered"
 
     # Collect the parents of reparented nodes
     for n in changes.reparented
       # Get the current parent
-      trees.add n.parentNode
+      @_addToTrees trees, n.parentNode, "reparented node landed here"
 
       # Get the old parent
       parent = n
       while (parent in changes.removed) or (parent in changes.reparented)
         parent = changes.getOldParentNode parent
-      trees.add parent
+      @_addToTrees trees, parent, "child was reparented from here"
 
     return trees.roots
 
@@ -1077,6 +1094,8 @@ class window.DomTextMapper extends TextMapperCore
     # Actually react to the changes
     #@log reason, changes
 
+    @log "=== Collecting changes. ==="
+
     # Collect the changed sub-trees
     changedNodes = @_getInvolvedNodes changes
 
@@ -1089,6 +1108,8 @@ class window.DomTextMapper extends TextMapperCore
         # If this change involved a root change, set the flag
         corpusChanged = true
 #        @log "Setting the corpus changed flag on changes @", node
+
+    @log "=== Finished reacting to changes. ==="
 
     # If there was a corpus change, announce it
     if corpusChanged then setTimeout =>

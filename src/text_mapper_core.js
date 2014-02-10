@@ -65,10 +65,10 @@
       var prefix, prefixStart, suffix;
       this._startScan("getContextForCharRange()");
       if (start < 0) {
-        throw Error("Negative range start is invalid!");
+        throw Error("Negative range start (", start, ") is invalid!");
       }
       if (end > this._corpus.length) {
-        throw Error("Range end is after the end of corpus!");
+        throw Error("Range end (", end, ") is after the end of corpus (", this._corpus.length, ")!");
       }
       prefixStart = Math.max(0, start - CONTEXT_LEN);
       prefix = this._corpus.slice(prefixStart, start);

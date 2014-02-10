@@ -547,6 +547,7 @@
         if (node == null) {
           this.log("Root node:", this.rootNode);
           this.log("Wanted node:", origNode);
+          console.log("Is this even a child?", this.rootNode.contains(origNode));
           throw new Error("Called getPathTo on a node which was not a descendant of the configured root node.");
         }
         xpath = (this.getPathSegment(node)) + '/' + xpath;
@@ -920,8 +921,16 @@
       }
     };
 
-    DomTextMapper.prototype._isIgnored = function(node) {
-      var container, _i, _len, _ref, _ref1;
+    DomTextMapper.prototype._isIrrelevant = function(node) {
+      var _ref;
+      return node.nodeType === Node.ELEMENT_NODE && ((_ref = node.tagName.toLowerCase()) === "canvas" || _ref === "script");
+    };
+
+    DomTextMapper.prototype._isIgnored = function(node, ignoreIrrelevant) {
+      var container, _i, _len, _ref;
+      if (ignoreIrrelevant == null) {
+        ignoreIrrelevant = false;
+      }
       _ref = this._getIgnoredParts();
       for (_i = 0, _len = _ref.length; _i < _len; _i++) {
         container = _ref[_i];
@@ -929,10 +938,11 @@
           return true;
         }
       }
-      if (node.nodeType === Node.ELEMENT_NODE && ((_ref1 = node.tagName.toLowerCase()) === "canvas" || _ref1 === "script")) {
-        return true;
+      if (ignoreIrrelevant) {
+        return this._isIrrelevant(node);
+      } else {
+        return false;
       }
-      return false;
     };
 
     DomTextMapper.prototype._isAttributeChangeImportant = function(node, attributeName, oldValue, newValue) {
@@ -950,7 +960,7 @@
         return changes;
       }
       changes.added = changes.added.filter(function(element) {
-        return !_this._isIgnored(element);
+        return !_this._isIgnored(element, true);
       });
       removed = changes.removed;
       changes.removed = removed.filter(function(element) {
@@ -959,14 +969,14 @@
         while (__indexOf.call(removed, parent) >= 0) {
           parent = changes.getOldParentNode(parent);
         }
-        return !_this._isIgnored(parent);
+        return !_this._isIgnored(element, true);
       });
       attributeChanged = {};
       _ref1 = (_ref = changes.attributeChanged) != null ? _ref : {};
       for (attrName in _ref1) {
         elementList = _ref1[attrName];
         list = elementList.filter(function(element) {
-          return !_this._isIgnored(element);
+          return !_this._isIgnored(element, true);
         });
         list = list.filter(function(element) {
           return _this._isAttributeChangeImportant(element, attrName, changes.getOldAttribute(element, attrName), element.getAttribute(attrName));
@@ -977,12 +987,12 @@
       }
       changes.attributeChanged = attributeChanged;
       changes.characterDataChanged = changes.characterDataChanged.filter(function(element) {
-        return !_this._isIgnored(element);
+        return !_this._isIgnored(element, true);
       });
       changes.reordered = changes.reordered.filter(function(element) {
         var parent;
         parent = element.parentNode;
-        return !_this._isIgnored(parent);
+        return !_this._isIgnored(parent, true);
       });
       attributeChangedCount = 0;
       _ref2 = changes.attributeChanged;

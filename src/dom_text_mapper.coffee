@@ -564,6 +564,7 @@ class window.DomTextMapper extends TextMapperCore
       unless node?
         @log "Root node:", @rootNode
         @log "Wanted node:", origNode
+        console.log "Is this even a child?", @rootNode.contains origNode
         throw new Error "Called getPathTo on a node which was not a descendant of the configured root node."
       xpath = (@getPathSegment node) + '/' + xpath
       node = node.parentNode
@@ -949,15 +950,23 @@ class window.DomTextMapper extends TextMapperCore
     else # Not ignoring anything; facing reality as it is
       []
 
+  # Irrelevent nodes are nodes that are guaranteed not to content any valid
+  # text. Usually, we don't need to care about them.
+  _isIrrelevant: (node) ->
+    node.nodeType is Node.ELEMENT_NODE and
+      node.tagName.toLowerCase() in ["canvas", "script"]
+
   # Determines whether a node should be ignored
-  _isIgnored: (node) ->
+  # This can be caused by either being part of a sub-tree which is ignored,
+  # or being irrelevant by nature, if this option is allowed.
+  _isIgnored: (node, ignoreIrrelevant = false) ->
     for container in @_getIgnoredParts()
       return true if container.contains node
-    if node.nodeType is Node.ELEMENT_NODE and
-      node.tagName.toLowerCase() in ["canvas", "script"]
-        return true
 
-    return false
+    if ignoreIrrelevant
+      @_isIrrelevant node
+    else
+      false
 
   # Determine whether an attribute change has to be taken seriously
   _isAttributeChangeImportant: (node, attributeName, oldValue, newValue) ->
@@ -979,7 +988,7 @@ class window.DomTextMapper extends TextMapperCore
 
     # Go through added elements
     changes.added = changes.added.filter (element) =>
-      not @_isIgnored element
+      not @_isIgnored(element, true)
 
     # Go through removed elements
     removed = changes.removed
@@ -987,13 +996,13 @@ class window.DomTextMapper extends TextMapperCore
       parent = element
       while parent in removed
         parent = changes.getOldParentNode parent
-      not @_isIgnored parent
+      not @_isIgnored(element, true)
 
     # Go through attributeChanged elements
     attributeChanged = {}
     for attrName, elementList of changes.attributeChanged ? {}
       # Filter out the ignored elements
-      list = elementList.filter (element) => not @_isIgnored element
+      list = elementList.filter (element) => not @_isIgnored(element, true)
 
       # Filter out the ignored attribute changes
       list = list.filter (element) =>
@@ -1006,12 +1015,14 @@ class window.DomTextMapper extends TextMapperCore
     changes.attributeChanged = attributeChanged
 
     # Go through the characterDataChanged elements
-    changes.characterDataChanged = changes.characterDataChanged.filter (element) => not @_isIgnored element
+    changes.characterDataChanged =
+      changes.characterDataChanged.filter (element) =>
+        not @_isIgnored(element, true)
 
     # Go through the reordered elements
     changes.reordered = changes.reordered.filter (element) =>
       parent = element.parentNode
-      not @_isIgnored parent
+      not @_isIgnored(parent, true)
 
     # Go through the reparented elements
     # TODO

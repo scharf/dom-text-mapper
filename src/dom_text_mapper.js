@@ -547,7 +547,7 @@
         if (node == null) {
           this.log("Root node:", this.rootNode);
           this.log("Wanted node:", origNode);
-          console.log("Is this even a child?", this.rootNode.contains(origNode));
+          this.log("Is this even a child?", this.rootNode.contains(origNode));
           throw new Error("Called getPathTo on a node which was not a descendant of the configured root node.");
         }
         xpath = (this.getPathSegment(node)) + '/' + xpath;
@@ -931,6 +931,9 @@
       if (ignoreIrrelevant == null) {
         ignoreIrrelevant = false;
       }
+      if (!this.pathStartNode.contains(node)) {
+        return true;
+      }
       _ref = this._getIgnoredParts();
       for (_i = 0, _len = _ref.length; _i < _len; _i++) {
         container = _ref[_i];
@@ -1011,12 +1014,10 @@
     DomTextMapper.prototype._addToTrees = function() {
       var data, node, reason, trees;
       trees = arguments[0], node = arguments[1], reason = arguments[2], data = 4 <= arguments.length ? __slice.call(arguments, 3) : [];
-      trees.add(node);
-      if (node === this.pathStartNode) {
-        return this.log.apply(this, ["Added change on root node, because", reason].concat(__slice.call(data)));
-      } else {
-        return console.log.apply(console, ["Added node", node, "because", reason].concat(__slice.call(data)));
+      if (!this.pathStartNode.contains(node)) {
+        return null;
       }
+      return trees.add(node);
     };
 
     DomTextMapper.prototype._getInvolvedNodes = function(changes) {
@@ -1076,7 +1077,6 @@
       if (!changes) {
         return;
       }
-      this.log("=== Collecting changes. ===");
       changedNodes = this._getInvolvedNodes(changes);
       corpusChanged = false;
       for (_i = 0, _len = changedNodes.length; _i < _len; _i++) {
@@ -1085,7 +1085,6 @@
           corpusChanged = true;
         }
       }
-      this.log("=== Finished reacting to changes. ===");
       if (corpusChanged) {
         return setTimeout(function() {
           var event;

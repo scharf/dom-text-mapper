@@ -564,7 +564,7 @@ class window.DomTextMapper extends TextMapperCore
       unless node?
         @log "Root node:", @rootNode
         @log "Wanted node:", origNode
-        console.log "Is this even a child?", @rootNode.contains origNode
+        @log "Is this even a child?", @rootNode.contains origNode
         throw new Error "Called getPathTo on a node which was not a descendant of the configured root node."
       xpath = (@getPathSegment node) + '/' + xpath
       node = node.parentNode
@@ -960,6 +960,9 @@ class window.DomTextMapper extends TextMapperCore
   # This can be caused by either being part of a sub-tree which is ignored,
   # or being irrelevant by nature, if this option is allowed.
   _isIgnored: (node, ignoreIrrelevant = false) ->
+    # Don't bother with totally removed nodes
+    return true unless @pathStartNode.contains node
+
     for container in @_getIgnoredParts()
       return true if container.contains node
 
@@ -993,9 +996,13 @@ class window.DomTextMapper extends TextMapperCore
     # Go through removed elements
     removed = changes.removed
     changes.removed = removed.filter (element) =>
+      # Get the first non-removed parent
       parent = element
       while parent in removed
         parent = changes.getOldParentNode parent
+#      pInDoc = @pathStartNode.contains parent
+#      unless pInDoc
+#        @log "First non-removed parent is", parent, ". In doc?", pInDoc
       not @_isIgnored(element, true)
 
     # Go through attributeChanged elements
@@ -1043,11 +1050,15 @@ class window.DomTextMapper extends TextMapperCore
     changes
 
   _addToTrees: (trees, node, reason, data...) ->
+    unless @pathStartNode.contains node
+#      @log "Not adding node", node,
+#        "to change collection, since it seems to have been removed."
+      return null
     trees.add node
-    if node is @pathStartNode
-      @log "Added change on root node, because", reason, data...
-    else
-      console.log "Added node", node, "because", reason, data...
+#    if node is @pathStartNode
+#      @log "Added change on root node, because", reason, data...
+#    else
+#      @log "Added node", node, "because", reason, data...
 
   # Callect all nodes involved in any of the passed changes
   _getInvolvedNodes: (changes) ->
@@ -1105,7 +1116,7 @@ class window.DomTextMapper extends TextMapperCore
     # Actually react to the changes
     #@log reason, changes
 
-    @log "=== Collecting changes. ==="
+#    @log "=== Collecting changes. ==="
 
     # Collect the changed sub-trees
     changedNodes = @_getInvolvedNodes changes
@@ -1120,7 +1131,7 @@ class window.DomTextMapper extends TextMapperCore
         corpusChanged = true
 #        @log "Setting the corpus changed flag on changes @", node
 
-    @log "=== Finished reacting to changes. ==="
+#    @log "=== Finished reacting to changes. ==="
 
     # If there was a corpus change, announce it
     if corpusChanged then setTimeout =>

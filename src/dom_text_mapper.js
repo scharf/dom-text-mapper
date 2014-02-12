@@ -200,7 +200,7 @@
         }
         diff = this.dmp.compare(oldContent, content, true);
         this.log("** Corpus change (at", path, "):", diff.diffExplanation);
-        this.log("Remaining corpus (at", path, "):", content);
+        this.log("** Length change: ", lengthDelta, " chars");
       }
       prefix = path + "/";
       pathsToDrop = (function() {
@@ -517,6 +517,31 @@
       }
     };
 
+    DomTextMapper.prototype._enumerateChildren = function(node, path) {
+      var child, childPath, children, i, newCount, nodeName, oldCount, results, typeCount;
+      if (!node.hasChildNodes()) {
+        return [];
+      }
+      results = [];
+      children = node.childNodes;
+      i = 0;
+      typeCount = Object();
+      while (i < children.length) {
+        child = children[i];
+        nodeName = this.getProperNodeName(child);
+        oldCount = typeCount[nodeName];
+        newCount = oldCount != null ? oldCount + 1 : 1;
+        typeCount[nodeName] = newCount;
+        childPath = path + "/" + nodeName + (newCount > 1 ? "[" + newCount + "]" : "");
+        results.push({
+          node: child,
+          path: childPath
+        });
+        i++;
+      }
+      return results;
+    };
+
     DomTextMapper.prototype.getNodePosition = function(node) {
       var pos, tmp;
       pos = 0;
@@ -559,12 +584,16 @@
     };
 
     DomTextMapper.prototype.traverseSubTree = function(node, path, invisible, verbose) {
-      var child, cont, subpath, _i, _len, _ref;
+      var child, cont, debug, subpath, _i, _len, _ref;
       if (invisible == null) {
         invisible = false;
       }
       if (verbose == null) {
         verbose = false;
+      }
+      debug = false;
+      if (debug) {
+        this.log("Traversing path", path);
       }
       if (this._isIgnored(node)) {
         return;
@@ -722,16 +751,22 @@
 
     DomTextMapper.prototype.computeSourcePositions = function(match) {
       var dc, displayEnd, displayIndex, displayStart, displayText, sc, sourceEnd, sourceIndex, sourceStart, sourceText;
+      this.log("In computeSourcePosition", match.element.path, match.element.node.data);
+      this.log("Calculating source position at " + match.element.path);
       sourceText = match.element.node.data.replace(/\n/g, " ");
+      this.log("sourceText is '" + sourceText + "'");
       displayText = match.element.content;
+      this.log("displayText is '" + displayText + "'");
       if (displayText.length > sourceText.length) {
         throw new Error("Invalid match at" + match.element.path + ": sourceText is '" + sourceText + "'," + " displayText is '" + displayText + "'.");
       }
       displayStart = match.start != null ? match.start : 0;
       displayEnd = match.end != null ? match.end : displayText.length;
+      this.log("Display charRange is: " + displayStart + "-" + displayEnd);
       if (displayEnd === 0) {
         match.startCorrected = 0;
         match.endCorrected = 0;
+        this.log("This is empty. Returning");
         return;
       }
       sourceIndex = 0;
@@ -752,6 +787,7 @@
       }
       match.startCorrected = sourceStart;
       match.endCorrected = sourceEnd;
+      this.log("computeSourcePosition done. Corrected charRange is: ", match.startCorrected + "-" + match.endCorrected);
       return null;
     };
 
@@ -770,8 +806,38 @@
       return content;
     };
 
+    DomTextMapper.prototype._markNodeAsIrrelevant = function(node, path, verbose) {
+      var item, _i, _len, _ref, _results;
+      if (verbose) {
+        this.log("Marking node at path", path, "as irrelevant.");
+      }
+      this.path[path].irrelevant = true;
+      _ref = this._enumerateChildren(node, path, verbose);
+      _results = [];
+      for (_i = 0, _len = _ref.length; _i < _len; _i++) {
+        item = _ref[_i];
+        _results.push(this._markNodeAsIrrelevant(item.node, item.path, verbose));
+      }
+      return _results;
+    };
+
+    DomTextMapper.prototype._markNodeAsMystery = function(node, path, verbose) {
+      var item, _i, _len, _ref, _results;
+      if (verbose) {
+        this.log("Marking node at path", path, "as mystery.");
+      }
+      this.path[path].mystery = true;
+      _ref = this._enumerateChildren(node, path, verbose);
+      _results = [];
+      for (_i = 0, _len = _ref.length; _i < _len; _i++) {
+        item = _ref[_i];
+        _results.push(this._markNodeAsMystery(item.node, item.path, verbose));
+      }
+      return _results;
+    };
+
     DomTextMapper.prototype.collectPositions = function(node, path, parentContent, parentIndex, index) {
-      var atomic, child, childPath, children, content, endIndex, i, newCount, nodeName, oldCount, pathInfo, pos, startIndex, typeCount;
+      var atomic, content, debug, endIndex, item, pathInfo, pos, startIndex, _i, _len, _ref;
       if (parentContent == null) {
         parentContent = null;
       }
@@ -781,7 +847,14 @@
       if (index == null) {
         index = 0;
       }
-      if (this._isIgnored(node)) {
+      debug = false;
+      if (debug) {
+        this.log("Post-processing path ", path);
+      }
+      if (this._isIgnored(node, false, debug)) {
+        if (debug) {
+          this.log("This is ignored!");
+        }
         pos = parentIndex + index;
         if (!((this._ignorePos != null) && this._ignorePos < pos)) {
           this._ignorePos = pos;
@@ -794,10 +867,15 @@
         pathInfo.start = parentIndex + index;
         pathInfo.end = parentIndex + index;
         pathInfo.atomic = false;
+        if (debug) {
+          this.log("Path", path, "is empty; setting it to atomic.");
+        }
+        this._markNodeAsIrrelevant(node, path, debug);
         return index;
       }
       startIndex = parentContent != null ? parentContent.indexOf(content, index) : index;
       if (startIndex === -1) {
+        this._markNodeAsMystery(node, path, debug);
         return index;
       }
       endIndex = startIndex + content.length;
@@ -805,20 +883,14 @@
       pathInfo.start = parentIndex + startIndex;
       pathInfo.end = parentIndex + endIndex;
       pathInfo.atomic = atomic;
+      if (debug) {
+        this.log("Is", path, "atomic?", atomic);
+      }
       if (!atomic) {
-        children = node.childNodes;
-        i = 0;
-        pos = 0;
-        typeCount = Object();
-        while (i < children.length) {
-          child = children[i];
-          nodeName = this.getProperNodeName(child);
-          oldCount = typeCount[nodeName];
-          newCount = oldCount != null ? oldCount + 1 : 1;
-          typeCount[nodeName] = newCount;
-          childPath = path + "/" + nodeName + (newCount > 1 ? "[" + newCount + "]" : "");
-          pos = this.collectPositions(child, childPath, content, parentIndex + startIndex, pos);
-          i++;
+        _ref = this._enumerateChildren(node, path);
+        for (_i = 0, _len = _ref.length; _i < _len; _i++) {
+          item = _ref[_i];
+          pos = this.collectPositions(item.node, item.path, content, parentIndex + startIndex, pos);
         }
       }
       return endIndex;
@@ -848,8 +920,11 @@
       return result;
     };
 
-    DomTextMapper.prototype._testNodeMapping = function(path, info) {
+    DomTextMapper.prototype._testNodeMapping = function(path, info, verbose) {
       var inCorpus, ok1, ok2, realContent;
+      if (verbose == null) {
+        verbose = false;
+      }
       if (info == null) {
         info = this.path[path];
       }
@@ -859,34 +934,45 @@
       inCorpus = info.end ? this._corpus.slice(info.start, info.end) : "";
       realContent = this.getNodeContent(info.node);
       ok1 = info.content === inCorpus;
-      if (!ok1) {
+      if (verbose && !ok1) {
         this.log("Mismatch on ", path, ": stored content is", "'" + info.content + "'", ", range in corpus is", "'" + inCorpus + "'");
       }
       ok2 = info.content === realContent;
-      if (!ok2) {
+      if (verbose && !ok2) {
         this.log("Mismatch on ", path, ": stored content is '", info.content, "', actual content is '", realContent, "'.");
       }
-      return [ok1, ok2];
+      return ok1 && ok2;
     };
 
-    DomTextMapper.prototype._testAllMappings = function() {
-      var i, info, p, path, _ref, _ref1, _results;
-      this.log("Verifying map info: was it all properly traversed?");
+    DomTextMapper.prototype._testAllMappings = function(verbose) {
+      var correct, corruptect, i, info, p, path, _ref, _ref1;
+      if (verbose == null) {
+        verbose = false;
+      }
+      this.log("Verifying map info: was it all properly traversed & post-processed?");
+      correct = true;
       _ref = this.path;
       for (i in _ref) {
         p = _ref[i];
-        if (p.atomic == null) {
-          this.log(i, "is missing data.");
+        if (!(p.irrelevant || p.mystery || (p.atomic != null))) {
+          if (verbose || correct) {
+            this.log(i, "is missing data.");
+          }
+          correct = false;
         }
+      }
+      if (!correct) {
+        return false;
       }
       this.log("Verifying map info: do nodes match?");
       _ref1 = this.path;
-      _results = [];
       for (path in _ref1) {
         info = _ref1[path];
-        _results.push(this._testNodeMapping(path, info));
+        if (!this._testNodeMapping(path, info, verbose)) {
+          corruptect = false;
+        }
       }
-      return _results;
+      return correct;
     };
 
     DomTextMapper.prototype.getPageIndex = function() {
@@ -926,26 +1012,42 @@
       return node.nodeType === Node.ELEMENT_NODE && ((_ref = node.tagName.toLowerCase()) === "canvas" || _ref === "script");
     };
 
-    DomTextMapper.prototype._isIgnored = function(node, ignoreIrrelevant) {
+    DomTextMapper.prototype._isIgnored = function(node, ignoreIrrelevant, debug) {
       var container, _i, _len, _ref;
       if (ignoreIrrelevant == null) {
         ignoreIrrelevant = false;
       }
+      if (debug == null) {
+        debug = false;
+      }
       if (!this.pathStartNode.contains(node)) {
+        if (debug) {
+          this.log("Node", node, "is ignored, because it's not a descendant of", this.pathStartNode, ".");
+        }
         return true;
       }
       _ref = this._getIgnoredParts();
       for (_i = 0, _len = _ref.length; _i < _len; _i++) {
         container = _ref[_i];
         if (container.contains(node)) {
+          if (debug) {
+            this.log("Node", node, "is ignore, because it's a descendant of", containter);
+          }
           return true;
         }
       }
       if (ignoreIrrelevant) {
-        return this._isIrrelevant(node);
-      } else {
-        return false;
+        if (this._isIrrelevant(node)) {
+          if (debug) {
+            this.log("Node", node, "is ignored, because it's irrelevant.");
+          }
+          return true;
+        }
       }
+      if (debug) {
+        this.log("Node", node, "is NOT ignored.");
+      }
+      return false;
     };
 
     DomTextMapper.prototype._isAttributeChangeImportant = function(node, attributeName, oldValue, newValue) {
@@ -1053,7 +1155,7 @@
       _ref4 = changes.reordered;
       for (_m = 0, _len4 = _ref4.length; _m < _len4; _m++) {
         n = _ref4[_m];
-        this._addToTrees(trees, n.parentNode, "childred were reordered");
+        this._addToTrees(trees, n.parentNode, "children were reordered");
       }
       _ref5 = changes.reparented;
       for (_n = 0, _len5 = _ref5.length; _n < _len5; _n++) {

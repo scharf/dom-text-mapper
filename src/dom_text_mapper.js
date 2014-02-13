@@ -293,7 +293,7 @@
       parentPathInfo.length += lengthDelta;
       parentPathInfo.end += lengthDelta;
       if (isNaN(parentPathInfo.end)) {
-        throw new Error("wtf");
+        throw new Error("Internal error: got a NaN");
       }
       return this._alterAncestorsMappingData(parentPathInfo.node, parentPathInfo, opStart, opEnd, newContent);
     };
@@ -317,7 +317,7 @@
         info.start += delta;
         info.end += delta;
         if (isNaN(info.end)) {
-          throw new Error("wtf");
+          throw new Error("Internal error: got a NaN");
         } else {
           _results.push(void 0);
         }
@@ -856,8 +856,7 @@
         index = 0;
       }
       if (isNaN(parentIndex)) {
-        this.log("Should collect positions @", path, ", but parentIndex is NaN.");
-        throw new Error("wtf");
+        throw new Error("Internal error: got a NaN");
       }
       debug = false;
       if (debug) {
@@ -879,7 +878,7 @@
         pathInfo.start = parentIndex + index;
         pathInfo.end = parentIndex + index;
         if (isNaN(pathInfo.end)) {
-          throw new Error("wtf");
+          throw new Error("Internal error: got a NaN");
         }
         pathInfo.atomic = false;
         if (debug) {
@@ -898,7 +897,7 @@
       pathInfo.start = parentIndex + startIndex;
       pathInfo.end = parentIndex + endIndex;
       if (isNaN(pathInfo.end)) {
-        throw new Error("wtf");
+        throw new Error("Internal error: got a NaN");
       }
       pathInfo.atomic = atomic;
       if (debug) {

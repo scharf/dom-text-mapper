@@ -263,16 +263,11 @@ class window.DomTextMapper extends TextMapperCore
       parentPathInfo = @path[parentPath]
 
       # Now let's find out where we are inside our parent
-      oldIndex = if node is node.parentNode.firstChild
+      predecessorInfo = @_findNonMysteryPredecessor node, parentPath
+      oldIndex = unless predecessorInfo?
         0
       else
-        predecessor = node.previousSibling
-        predecessorPath = @getPathTo predecessor
-        predecessorInfo = @path[predecessorPath]
-        unless predecessorInfo
-          throw new Error "While working on updating '" + path + "', I was trying to look up info about the previous sibling @ '" + predecessorPath + "', but we have none!"
-
-        @path[@getPathTo node.previousSibling].end - parentPathInfo.start
+        predecessorInfo.end - parentPathInfo.start
 
       # Recursively calculate all the positions
       @collectPositions node, path, parentPathInfo.content,
@@ -577,6 +572,18 @@ class window.DomTextMapper extends TextMapperCore
 
     results
 
+  # Find the first predecessor of a given node, which is not a mystery node
+  _findNonMysteryPredecessor: (successor, parentPath) ->
+    node = successor.previousSibling
+    while node
+      path = parentPath + "/" + @getPathSegment node
+      info = @path[path]
+      if info.mystery
+        node = node.previousSibling
+      else
+        return info
+    return null
+
   getNodePosition: (node) ->
     pos = 0
     tmp = node
@@ -641,10 +648,8 @@ class window.DomTextMapper extends TextMapperCore
     # Q: should we check children even if
     # the given node had no rendered content?
     # A: I seem to remember that the answer is yes, but I don't remember why.
-    if node.hasChildNodes()
-      for child in node.childNodes
-        subpath = path + '/' + (@getPathSegment child)
-        @traverseSubTree child, subpath, invisible, verbose
+    for item in @_enumerateChildren node, path
+      @traverseSubTree item.node, item.path, invisible, verbose
     null
 
   getBody: -> (@rootWin.document.getElementsByTagName "body")[0]
@@ -958,15 +963,13 @@ class window.DomTextMapper extends TextMapperCore
       throw new Error "Could not look up node @ '" + path + "'!"
 
     # Don't bother with weird nodes
-    return true if info.irrelevant or info.mystery
-
-    # If there is no start info, we can't do anything.
-    unless info.start? and info.end?
-      @log "WARNING: can't check node @", path
-      return true
+    return true if info.mystery
 
     # Get the range from corpus
-    inCorpus = @_corpus[ info.start ... info.end ]
+    inCorpus = if (info.start? and info.end?)
+      @_corpus[ info.start ... info.end ]
+    else
+      ""
 
     # Get the actual node content
     realContent = @getNodeContent info.node

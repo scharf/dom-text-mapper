@@ -170,7 +170,7 @@
     };
 
     DomTextMapper.prototype._performUpdateOnNode = function(node, reason) {
-      var content, corpusChanged, data, diff, lengthDelta, oldContent, oldEnd, oldIndex, oldStart, p, parentPath, parentPathInfo, path, pathInfo, pathsToDrop, predecessor, predecessorInfo, predecessorPath, prefix, startTime, _i, _len;
+      var content, corpusChanged, data, diff, lengthDelta, oldContent, oldEnd, oldIndex, oldStart, p, parentPath, parentPathInfo, path, pathInfo, pathsToDrop, predecessorInfo, prefix, startTime, _i, _len;
       if (reason == null) {
         reason = "(no reason)";
       }
@@ -238,19 +238,8 @@
       } else {
         parentPath = this._parentPath(path);
         parentPathInfo = this.path[parentPath];
-        oldIndex = (function() {
-          if (node === node.parentNode.firstChild) {
-            return 0;
-          } else {
-            predecessor = node.previousSibling;
-            predecessorPath = this.getPathTo(predecessor);
-            predecessorInfo = this.path[predecessorPath];
-            if (!predecessorInfo) {
-              throw new Error("While working on updating '" + path + "', I was trying to look up info about the previous sibling @ '" + predecessorPath + "', but we have none!");
-            }
-            return this.path[this.getPathTo(node.previousSibling)].end - parentPathInfo.start;
-          }
-        }).call(this);
+        predecessorInfo = this._findNonMysteryPredecessor(node, parentPath);
+        oldIndex = predecessorInfo == null ? 0 : predecessorInfo.end - parentPathInfo.start;
         this.collectPositions(node, path, parentPathInfo.content, parentPathInfo.start, oldIndex);
       }
       this.log("Data update took " + (this.timestamp() - startTime) + " ms.");
@@ -550,6 +539,21 @@
       return results;
     };
 
+    DomTextMapper.prototype._findNonMysteryPredecessor = function(successor, parentPath) {
+      var info, node, path;
+      node = successor.previousSibling;
+      while (node) {
+        path = parentPath + "/" + this.getPathSegment(node);
+        info = this.path[path];
+        if (info.mystery) {
+          node = node.previousSibling;
+        } else {
+          return info;
+        }
+      }
+      return null;
+    };
+
     DomTextMapper.prototype.getNodePosition = function(node) {
       var pos, tmp;
       pos = 0;
@@ -592,7 +596,7 @@
     };
 
     DomTextMapper.prototype.traverseSubTree = function(node, path, invisible, verbose) {
-      var child, cont, debug, subpath, _i, _len, _ref;
+      var cont, debug, item, _i, _len, _ref;
       if (invisible == null) {
         invisible = false;
       }
@@ -628,13 +632,10 @@
         }
         invisible = true;
       }
-      if (node.hasChildNodes()) {
-        _ref = node.childNodes;
-        for (_i = 0, _len = _ref.length; _i < _len; _i++) {
-          child = _ref[_i];
-          subpath = path + '/' + (this.getPathSegment(child));
-          this.traverseSubTree(child, subpath, invisible, verbose);
-        }
+      _ref = this._enumerateChildren(node, path);
+      for (_i = 0, _len = _ref.length; _i < _len; _i++) {
+        item = _ref[_i];
+        this.traverseSubTree(item.node, item.path, invisible, verbose);
       }
       return null;
     };
@@ -945,14 +946,10 @@
       if (!info) {
         throw new Error("Could not look up node @ '" + path + "'!");
       }
-      if (info.irrelevant || info.mystery) {
+      if (info.mystery) {
         return true;
       }
-      if (!((info.start != null) && (info.end != null))) {
-        this.log("WARNING: can't check node @", path);
-        return true;
-      }
-      inCorpus = this._corpus.slice(info.start, info.end);
+      inCorpus = (info.start != null) && (info.end != null) ? this._corpus.slice(info.start, info.end) : "";
       realContent = this.getNodeContent(info.node);
       ok1 = info.content === inCorpus;
       ok2 = info.content === realContent;

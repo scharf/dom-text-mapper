@@ -949,6 +949,14 @@ class window.DomTextMapper extends TextMapperCore
     unless info
       throw new Error "Could not look up node @ '" + path + "'!"
 
+    # Don't bother with weird nodes
+    return true if info.irrelevant or info.mystery
+
+    # If there is no start info, we can't do anything.
+    unless info.start?
+      @log "WARNING: can't check node @", path
+      return true
+
     # Get the range from corpus
     inCorpus = if info.end
       @_corpus[ info.start ... info.end ]
@@ -961,16 +969,18 @@ class window.DomTextMapper extends TextMapperCore
     # Compare stored content with the data in corpus
     ok1 = info.content is inCorpus
     if verbose and not ok1
-      @log "Mismatch on ", path, ": stored content is",
-        "'" + info.content + "'",
-        ", range in corpus is",
-        "'" + inCorpus + "'"
+      @dmp ?= new DTM_DMPMatcher()
+      diff = @dmp.compare info.content, inCorpus, true
+      @log "Mismatch between stored content and corpus content at", path, ":",
+        diff.diffExplanation
 
     # Compare stored content with actual content
     ok2 = info.content is realContent
     if verbose and not ok2
-      @log "Mismatch on ", path, ": stored content is '", info.content,
-        "', actual content is '", realContent, "'."
+      @dmp ?= new DTM_DMPMatcher()
+      diff = @dmp.compare info.content, realContent, true
+      @log "Mismatch beteen stored and actual content at", path, ":",
+        diff.diffExplanation
 
     ok1 and ok2
 
@@ -989,7 +999,9 @@ class window.DomTextMapper extends TextMapperCore
     @log "Verifying map info: do nodes match?"
     for path, info of @path
       unless @_testNodeMapping path, info, verbose
-        corruptect = false
+        if correct and not verbose
+          @_testNodeMapping path, info, true
+        correct = false
 
     return correct
 

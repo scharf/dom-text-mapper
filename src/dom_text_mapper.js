@@ -921,7 +921,7 @@
     };
 
     DomTextMapper.prototype._testNodeMapping = function(path, info, verbose) {
-      var inCorpus, ok1, ok2, realContent;
+      var diff, inCorpus, ok1, ok2, realContent;
       if (verbose == null) {
         verbose = false;
       }
@@ -931,21 +931,36 @@
       if (!info) {
         throw new Error("Could not look up node @ '" + path + "'!");
       }
+      if (info.irrelevant || info.mystery) {
+        return true;
+      }
+      if (info.start == null) {
+        this.log("WARNING: can't check node @", path);
+        return true;
+      }
       inCorpus = info.end ? this._corpus.slice(info.start, info.end) : "";
       realContent = this.getNodeContent(info.node);
       ok1 = info.content === inCorpus;
       if (verbose && !ok1) {
-        this.log("Mismatch on ", path, ": stored content is", "'" + info.content + "'", ", range in corpus is", "'" + inCorpus + "'");
+        if (this.dmp == null) {
+          this.dmp = new DTM_DMPMatcher();
+        }
+        diff = this.dmp.compare(info.content, inCorpus, true);
+        this.log("Mismatch between stored content and corpus content at", path, ":", diff.diffExplanation);
       }
       ok2 = info.content === realContent;
       if (verbose && !ok2) {
-        this.log("Mismatch on ", path, ": stored content is '", info.content, "', actual content is '", realContent, "'.");
+        if (this.dmp == null) {
+          this.dmp = new DTM_DMPMatcher();
+        }
+        diff = this.dmp.compare(info.content, realContent, true);
+        this.log("Mismatch beteen stored and actual content at", path, ":", diff.diffExplanation);
       }
       return ok1 && ok2;
     };
 
     DomTextMapper.prototype._testAllMappings = function(verbose) {
-      var correct, corruptect, i, info, p, path, _ref, _ref1;
+      var correct, i, info, p, path, _ref, _ref1;
       if (verbose == null) {
         verbose = false;
       }
@@ -969,7 +984,10 @@
       for (path in _ref1) {
         info = _ref1[path];
         if (!this._testNodeMapping(path, info, verbose)) {
-          corruptect = false;
+          if (correct && !verbose) {
+            this._testNodeMapping(path, info, true);
+          }
+          correct = false;
         }
       }
       return correct;

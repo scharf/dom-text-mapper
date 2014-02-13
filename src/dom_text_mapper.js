@@ -170,7 +170,7 @@
     };
 
     DomTextMapper.prototype._performUpdateOnNode = function(node, reason) {
-      var content, corpusChanged, data, diff, lengthDelta, oldContent, oldEnd, oldIndex, oldStart, p, parentPath, parentPathInfo, path, pathInfo, pathsToDrop, predecessorInfo, prefix, startTime, _i, _len;
+      var content, corpusChanged, data, lengthDelta, oldContent, oldEnd, oldIndex, oldStart, p, parentPath, parentPathInfo, path, pathInfo, pathsToDrop, predecessorInfo, prefix, startTime, _i, _len;
       if (reason == null) {
         reason = "(no reason)";
       }
@@ -195,12 +195,6 @@
       corpusChanged = oldContent !== content;
       if (corpusChanged) {
         lengthDelta = content.length - oldContent.length;
-        if (this.dmp == null) {
-          this.dmp = new DTM_DMPMatcher();
-        }
-        diff = this.dmp.compare(oldContent, content, true);
-        this.log("** Corpus change (at", path, "):", diff.diffExplanation);
-        this.log("** Length change: ", lengthDelta, " chars");
       }
       prefix = path + "/";
       pathsToDrop = (function() {
@@ -225,9 +219,9 @@
         delete this.path[p];
       }
       if (corpusChanged) {
-        if (!(node === this.pathStartNode || pathInfo.mystery)) {
-          this._alterAncestorsMappingData(node, path, oldStart, oldEnd, content);
-          this._alterSiblingsMappingData(node, oldStart, oldEnd, content);
+        if (node !== this.pathStartNode) {
+          this._alterAncestorsMappingData(node, pathInfo, oldStart, oldEnd, content);
+          this._alterSiblingsMappingData(node, pathInfo, oldStart, oldEnd, content);
         }
       }
       this.traverseSubTree(node, path);
@@ -238,11 +232,10 @@
       } else {
         parentPath = this._parentPath(path);
         parentPathInfo = this.path[parentPath];
-        predecessorInfo = this._findNonMysteryPredecessor(node, parentPath);
+        predecessorInfo = this._findRelevantPredecessor(node, parentPath);
         oldIndex = predecessorInfo == null ? 0 : predecessorInfo.end - parentPathInfo.start;
         this.collectPositions(node, path, parentPathInfo.content, parentPathInfo.start, oldIndex);
       }
-      this.log("Data update took " + (this.timestamp() - startTime) + " ms.");
       this.restoreSelection();
       return corpusChanged;
     };
@@ -277,14 +270,17 @@
       }).call(this);
     };
 
-    DomTextMapper.prototype._alterAncestorsMappingData = function(node, path, oldStart, oldEnd, newContent) {
+    DomTextMapper.prototype._alterAncestorsMappingData = function(node, pathInfo, oldStart, oldEnd, newContent) {
       var lengthDelta, opEnd, opStart, pContent, pEnd, pStart, parentPath, parentPathInfo, prefix, suffix;
+      if (pathInfo.mystery) {
+        return;
+      }
       lengthDelta = newContent.length - (oldEnd - oldStart);
       if (node === this.pathStartNode) {
         this._updateCorpus(lengthDelta);
         return;
       }
-      parentPath = this._parentPath(path);
+      parentPath = this._parentPath(pathInfo.path);
       parentPathInfo = this.path[parentPath];
       opStart = parentPathInfo.start;
       opEnd = parentPathInfo.end;
@@ -299,11 +295,14 @@
       if (isNaN(parentPathInfo.end)) {
         throw new Error("wtf");
       }
-      return this._alterAncestorsMappingData(parentPathInfo.node, parentPath, opStart, opEnd, newContent);
+      return this._alterAncestorsMappingData(parentPathInfo.node, parentPathInfo, opStart, opEnd, newContent);
     };
 
-    DomTextMapper.prototype._alterSiblingsMappingData = function(node, oldStart, oldEnd, newContent) {
+    DomTextMapper.prototype._alterSiblingsMappingData = function(node, pathInfo, oldStart, oldEnd, newContent) {
       var delta, info, p, _ref, _results;
+      if (pathInfo.mystery) {
+        return;
+      }
       delta = newContent.length - (oldEnd - oldStart);
       if (!delta) {
         return;
@@ -312,7 +311,7 @@
       _results = [];
       for (p in _ref) {
         info = _ref[p];
-        if (!(info.start >= oldEnd)) {
+        if (!((!info.mystery) && info.start >= oldEnd)) {
           continue;
         }
         info.start += delta;
@@ -539,13 +538,13 @@
       return results;
     };
 
-    DomTextMapper.prototype._findNonMysteryPredecessor = function(successor, parentPath) {
+    DomTextMapper.prototype._findRelevantPredecessor = function(successor, parentPath) {
       var info, node, path;
       node = successor.previousSibling;
       while (node) {
         path = parentPath + "/" + this.getPathSegment(node);
         info = this.path[path];
-        if (info.mystery) {
+        if (info.mystery || info.irrelevant) {
           node = node.previousSibling;
         } else {
           return info;
@@ -856,6 +855,10 @@
       if (index == null) {
         index = 0;
       }
+      if (isNaN(parentIndex)) {
+        this.log("Should collect positions @", path, ", but parentIndex is NaN.");
+        throw new Error("wtf");
+      }
       debug = false;
       if (debug) {
         this.log("Post-processing path ", path);
@@ -944,6 +947,7 @@
         info = this.path[path];
       }
       if (!info) {
+        console.trace();
         throw new Error("Could not look up node @ '" + path + "'!");
       }
       if (info.mystery) {
@@ -1213,7 +1217,7 @@
     };
 
     DomTextMapper.prototype._reactToChanges = function(reason, changes, data) {
-      var changedNodes, corpusChanged, node, p, _i, _len,
+      var changedNodes, corpusChanged, node, _i, _len,
         _this = this;
       if (changes) {
         changes = this._filterChanges(changes);
@@ -1228,8 +1232,6 @@
         if (this._performUpdateOnNode(node, reason, false, data)) {
           corpusChanged = true;
         }
-        p = this.getPathTo(node);
-        this.log("Testing node mapping @", p, ":", this._testNodeMapping(p, null, true));
       }
       if (corpusChanged) {
         return setTimeout(function() {

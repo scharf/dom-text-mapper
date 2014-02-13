@@ -33,7 +33,6 @@ class SubTreeCollection
     # Replace the old list with the new one
     @roots = newRoots
 
-
 class window.DomTextMapper extends TextMapperCore
 
   @applicable: -> true
@@ -207,10 +206,10 @@ class window.DomTextMapper extends TextMapperCore
 
     if corpusChanged
       lengthDelta = content.length - oldContent.length
-      @dmp ?= new DTM_DMPMatcher()
-      diff = @dmp.compare oldContent, content, true
-      @log "** Corpus change (at", path, "):", diff.diffExplanation
-      @log "** Length change: ", lengthDelta, " chars"
+#      @dmp ?= new DTM_DMPMatcher()
+#      diff = @dmp.compare oldContent, content, true
+#      @log "** Corpus change (at", path, "):", diff.diffExplanation
+#      @log "** Length change: ", lengthDelta, " chars"
 #      @log "Remaining corpus (at", path, "):", content
 
     # === Phase 1: Drop the invalidated data
@@ -238,10 +237,10 @@ class window.DomTextMapper extends TextMapperCore
 
     if corpusChanged
       #@log "Hmm... overall node content has changed @", path, "!"
-      unless node is @pathStartNode or pathInfo.mystery
+      unless node is @pathStartNode
         #@log "Updating ancestors and siblings"
-        @_alterAncestorsMappingData node, path, oldStart, oldEnd, content
-        @_alterSiblingsMappingData node, oldStart, oldEnd, content
+        @_alterAncestorsMappingData node, pathInfo, oldStart, oldEnd, content
+        @_alterSiblingsMappingData node, pathInfo, oldStart, oldEnd, content
 
     # Phase 3: re-scan the invalidated part
 
@@ -263,7 +262,7 @@ class window.DomTextMapper extends TextMapperCore
       parentPathInfo = @path[parentPath]
 
       # Now let's find out where we are inside our parent
-      predecessorInfo = @_findNonMysteryPredecessor node, parentPath
+      predecessorInfo = @_findRelevantPredecessor node, parentPath
       oldIndex = unless predecessorInfo?
         0
       else
@@ -273,7 +272,7 @@ class window.DomTextMapper extends TextMapperCore
       @collectPositions node, path, parentPathInfo.content,
           parentPathInfo.start, oldIndex
         
-    @log "Data update took " + (@timestamp() - startTime) + " ms."
+#    @log "Data update took " + (@timestamp() - startTime) + " ms."
 
     # Restore the selection
     @restoreSelection()
@@ -308,7 +307,11 @@ class window.DomTextMapper extends TextMapperCore
 
   # Given the fact the the corpus of a given note has changed,
   # update the mapping info of its ancestors
-  _alterAncestorsMappingData: (node, path, oldStart, oldEnd, newContent) ->
+  _alterAncestorsMappingData: (node, pathInfo, oldStart, oldEnd, newContent) ->
+
+    # Don't bother if this is a mystery node; the ancestors don't contain
+    # this content anyway
+    return if pathInfo.mystery
 
     # Calculate how the length has changed
     lengthDelta = newContent.length - (oldEnd - oldStart)
@@ -320,7 +323,7 @@ class window.DomTextMapper extends TextMapperCore
       # There are no more ancestors, so return
       return
 
-    parentPath = @_parentPath path
+    parentPath = @_parentPath pathInfo.path
     parentPathInfo = @path[parentPath]
 
     # Save old start and end
@@ -352,13 +355,18 @@ class window.DomTextMapper extends TextMapperCore
       throw new Error "wtf"
 
     # Do the same with the next ancestor
-    @_alterAncestorsMappingData parentPathInfo.node, parentPath, opStart, opEnd,
-      newContent
+    @_alterAncestorsMappingData parentPathInfo.node, parentPathInfo,
+      opStart, opEnd, newContent
 
 
   # Given the fact the the corpus of a given note has changed,
   # update the mapping info of all later nodes.
-  _alterSiblingsMappingData: (node, oldStart, oldEnd, newContent) ->
+  _alterSiblingsMappingData: (node, pathInfo, oldStart, oldEnd, newContent) ->
+
+    # Don't bother if this is a mystery node; the ancestors don't contain
+    # this content anyway, so no cortinates to fix up.
+    return if pathInfo.mystery
+        
     # Calculate the offset, based on the difference in length
     delta = newContent.length - (oldEnd - oldStart)
 
@@ -367,7 +375,7 @@ class window.DomTextMapper extends TextMapperCore
     return unless delta
 
     # Go over all the elements that are later then the changed node
-    for p, info of @path when info.start >= oldEnd
+    for p, info of @path when (not info.mystery) and info.start >= oldEnd
       # Correct their positions
       info.start += delta
       info.end += delta
@@ -573,12 +581,12 @@ class window.DomTextMapper extends TextMapperCore
     results
 
   # Find the first predecessor of a given node, which is not a mystery node
-  _findNonMysteryPredecessor: (successor, parentPath) ->
+  _findRelevantPredecessor: (successor, parentPath) ->
     node = successor.previousSibling
     while node
       path = parentPath + "/" + @getPathSegment node
       info = @path[path]
-      if info.mystery
+      if info.mystery or info.irrelevant
         node = node.previousSibling
       else
         return info
@@ -878,6 +886,9 @@ class window.DomTextMapper extends TextMapperCore
   #    the first character offset position in the content of this node's
   #    parent node that is not accounted for by this node
   collectPositions: (node, path, parentContent = null, parentIndex = 0, index = 0) ->
+    if isNaN parentIndex
+      @log "Should collect positions @", path, ", but parentIndex is NaN."  
+      throw new Error "wtf"
     debug = false # path in ["./DIV", "./DIV/DIV"]
     if debug
       @log "Post-processing path ", path
@@ -960,6 +971,7 @@ class window.DomTextMapper extends TextMapperCore
 
     # Do we have it?
     unless info
+      console.trace()
       throw new Error "Could not look up node @ '" + path + "'!"
 
     # Don't bother with weird nodes
@@ -1247,8 +1259,8 @@ class window.DomTextMapper extends TextMapperCore
         corpusChanged = true
 #        @log "Setting the corpus changed flag on changes @", node
 
-      p = @getPathTo node
-      @log "Testing node mapping @", p, ":", @_testNodeMapping p, null, true
+#      p = @getPathTo node
+#      @log "Testing node mapping @", p, ":", @_testNodeMapping p, null, true
 
 #    @log "=== Finished reacting to changes. ==="
 

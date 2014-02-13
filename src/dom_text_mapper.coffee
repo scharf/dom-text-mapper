@@ -238,7 +238,7 @@ class window.DomTextMapper extends TextMapperCore
 
     if corpusChanged
       #@log "Hmm... overall node content has changed @", path, "!"
-      unless node is @pathStartNode
+      unless node is @pathStartNode or pathInfo.mystery
         #@log "Updating ancestors and siblings"
         @_alterAncestorsMappingData node, path, oldStart, oldEnd, content
         @_alterSiblingsMappingData node, oldStart, oldEnd, content
@@ -353,6 +353,8 @@ class window.DomTextMapper extends TextMapperCore
     # Fix up the length and the end position
     parentPathInfo.length += lengthDelta
     parentPathInfo.end += lengthDelta
+    if isNaN parentPathInfo.end
+      throw new Error "wtf"
 
     # Do the same with the next ancestor
     @_alterAncestorsMappingData parentPathInfo.node, parentPath, opStart, opEnd,
@@ -374,6 +376,8 @@ class window.DomTextMapper extends TextMapperCore
       # Correct their positions
       info.start += delta
       info.end += delta
+      if isNaN info.end
+        throw new Error "wtf"
 
   # Return info for a given path in the DOM
   _getInfoForPath: (path) =>
@@ -889,6 +893,8 @@ class window.DomTextMapper extends TextMapperCore
       # node has no content, not interesting
       pathInfo.start = parentIndex + index
       pathInfo.end = parentIndex + index
+      if isNaN pathInfo.end
+        throw new Error "wtf"
       pathInfo.atomic = false
       if debug
         @log "Path", path, "is empty; setting it to atomic."
@@ -912,6 +918,8 @@ class window.DomTextMapper extends TextMapperCore
     atomic = not node.hasChildNodes()
     pathInfo.start = parentIndex + startIndex
     pathInfo.end = parentIndex + endIndex
+    if isNaN pathInfo.end
+      throw new Error "wtf"
     pathInfo.atomic = atomic
 
     if debug
@@ -953,35 +961,47 @@ class window.DomTextMapper extends TextMapperCore
     return true if info.irrelevant or info.mystery
 
     # If there is no start info, we can't do anything.
-    unless info.start?
+    unless info.start? and info.end?
       @log "WARNING: can't check node @", path
       return true
 
     # Get the range from corpus
-    inCorpus = if info.end
-      @_corpus[ info.start ... info.end ]
-    else
-      ""
+    inCorpus = @_corpus[ info.start ... info.end ]
 
     # Get the actual node content
     realContent = @getNodeContent info.node
 
     # Compare stored content with the data in corpus
     ok1 = info.content is inCorpus
-    if verbose and not ok1
-      @dmp ?= new DTM_DMPMatcher()
-      diff = @dmp.compare info.content, inCorpus, true
-      @log "Mismatch between stored content and corpus content at", path, ":",
-        diff.diffExplanation
 
     # Compare stored content with actual content
     ok2 = info.content is realContent
-    if verbose and not ok2
-      @dmp ?= new DTM_DMPMatcher()
-      diff = @dmp.compare info.content, realContent, true
-      @log "Mismatch beteen stored and actual content at", path, ":",
-        diff.diffExplanation
 
+    if verbose and not (ok1 and ok2)
+      @dmp ?= new DTM_DMPMatcher()        
+      ok3 = inCorpus is realContent
+
+      if ok1
+        @log "X=*=*=X Stored and corpus content matches at", path
+      else  
+        diff = @dmp.compare info.content, inCorpus
+        @log "X=*=*=X Mismatch between stored content and corpus[",
+          info.start, "...", info.end, "] at", path,  diff.diff
+
+      if ok2
+        @log "X=*=*=X Stored and actual content matches at", path
+      else
+        diff = @dmp.compare info.content, realContent
+        @log "X=*=*=X Mismatch between stored and actual content at", path,
+          diff.diff
+
+      if ok3
+        @log "X=*=*=X Corpus and actual content matches at", path,        
+      else  
+        diff = @dmp.compare inCorpus, realContent
+        @log "X=*=*=X Mismatch between corpus[", info.start, "...", info.end,
+          "] and actual content at", path, diff.diff
+        
     ok1 and ok2
 
   # Internal debug method to verify the consistency of all mapping info
@@ -1148,8 +1168,8 @@ class window.DomTextMapper extends TextMapperCore
 #        "to change collection, since it seems to have been removed."
       return null
     trees.add node
-#    if node is @pathStartNode
-#      @log "Added change on root node, because", reason, data...
+    if node is @pathStartNode
+      @log "Added change on root node, because", reason, data...
 #    else
 #      @log "Added node", node, "because", reason, data...
 
@@ -1223,6 +1243,9 @@ class window.DomTextMapper extends TextMapperCore
         # If this change involved a root change, set the flag
         corpusChanged = true
 #        @log "Setting the corpus changed flag on changes @", node
+
+      p = @getPathTo node
+      @log "Testing node mapping @", p, ":", @_testNodeMapping p, null, true
 
 #    @log "=== Finished reacting to changes. ==="
 

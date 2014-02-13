@@ -225,7 +225,7 @@
         delete this.path[p];
       }
       if (corpusChanged) {
-        if (node !== this.pathStartNode) {
+        if (!(node === this.pathStartNode || pathInfo.mystery)) {
           this._alterAncestorsMappingData(node, path, oldStart, oldEnd, content);
           this._alterSiblingsMappingData(node, oldStart, oldEnd, content);
         }
@@ -307,6 +307,9 @@
       parentPathInfo.content = newContent = prefix + newContent + suffix;
       parentPathInfo.length += lengthDelta;
       parentPathInfo.end += lengthDelta;
+      if (isNaN(parentPathInfo.end)) {
+        throw new Error("wtf");
+      }
       return this._alterAncestorsMappingData(parentPathInfo.node, parentPath, opStart, opEnd, newContent);
     };
 
@@ -324,7 +327,12 @@
           continue;
         }
         info.start += delta;
-        _results.push(info.end += delta);
+        info.end += delta;
+        if (isNaN(info.end)) {
+          throw new Error("wtf");
+        } else {
+          _results.push(void 0);
+        }
       }
       return _results;
     };
@@ -866,6 +874,9 @@
       if (!content) {
         pathInfo.start = parentIndex + index;
         pathInfo.end = parentIndex + index;
+        if (isNaN(pathInfo.end)) {
+          throw new Error("wtf");
+        }
         pathInfo.atomic = false;
         if (debug) {
           this.log("Path", path, "is empty; setting it to atomic.");
@@ -882,6 +893,9 @@
       atomic = !node.hasChildNodes();
       pathInfo.start = parentIndex + startIndex;
       pathInfo.end = parentIndex + endIndex;
+      if (isNaN(pathInfo.end)) {
+        throw new Error("wtf");
+      }
       pathInfo.atomic = atomic;
       if (debug) {
         this.log("Is", path, "atomic?", atomic);
@@ -921,7 +935,7 @@
     };
 
     DomTextMapper.prototype._testNodeMapping = function(path, info, verbose) {
-      var diff, inCorpus, ok1, ok2, realContent;
+      var diff, inCorpus, ok1, ok2, ok3, realContent;
       if (verbose == null) {
         verbose = false;
       }
@@ -934,27 +948,37 @@
       if (info.irrelevant || info.mystery) {
         return true;
       }
-      if (info.start == null) {
+      if (!((info.start != null) && (info.end != null))) {
         this.log("WARNING: can't check node @", path);
         return true;
       }
-      inCorpus = info.end ? this._corpus.slice(info.start, info.end) : "";
+      inCorpus = this._corpus.slice(info.start, info.end);
       realContent = this.getNodeContent(info.node);
       ok1 = info.content === inCorpus;
-      if (verbose && !ok1) {
-        if (this.dmp == null) {
-          this.dmp = new DTM_DMPMatcher();
-        }
-        diff = this.dmp.compare(info.content, inCorpus, true);
-        this.log("Mismatch between stored content and corpus content at", path, ":", diff.diffExplanation);
-      }
       ok2 = info.content === realContent;
-      if (verbose && !ok2) {
+      if (verbose && !(ok1 && ok2)) {
         if (this.dmp == null) {
           this.dmp = new DTM_DMPMatcher();
         }
-        diff = this.dmp.compare(info.content, realContent, true);
-        this.log("Mismatch beteen stored and actual content at", path, ":", diff.diffExplanation);
+        ok3 = inCorpus === realContent;
+        if (ok1) {
+          this.log("X=*=*=X Stored and corpus content matches at", path);
+        } else {
+          diff = this.dmp.compare(info.content, inCorpus);
+          this.log("X=*=*=X Mismatch between stored content and corpus[", info.start, "...", info.end, "] at", path, diff.diff);
+        }
+        if (ok2) {
+          this.log("X=*=*=X Stored and actual content matches at", path);
+        } else {
+          diff = this.dmp.compare(info.content, realContent);
+          this.log("X=*=*=X Mismatch between stored and actual content at", path, diff.diff);
+        }
+        if (ok3) {
+          this.log("X=*=*=X Corpus and actual content matches at", path);
+        } else {
+          diff = this.dmp.compare(inCorpus, realContent);
+          this.log("X=*=*=X Mismatch between corpus[", info.start, "...", info.end, "] and actual content at", path, diff.diff);
+        }
       }
       return ok1 && ok2;
     };
@@ -1137,7 +1161,10 @@
       if (!this.pathStartNode.contains(node)) {
         return null;
       }
-      return trees.add(node);
+      trees.add(node);
+      if (node === this.pathStartNode) {
+        return this.log.apply(this, ["Added change on root node, because", reason].concat(__slice.call(data)));
+      }
     };
 
     DomTextMapper.prototype._getInvolvedNodes = function(changes) {
@@ -1189,7 +1216,7 @@
     };
 
     DomTextMapper.prototype._reactToChanges = function(reason, changes, data) {
-      var changedNodes, corpusChanged, node, _i, _len,
+      var changedNodes, corpusChanged, node, p, _i, _len,
         _this = this;
       if (changes) {
         changes = this._filterChanges(changes);
@@ -1204,6 +1231,8 @@
         if (this._performUpdateOnNode(node, reason, false, data)) {
           corpusChanged = true;
         }
+        p = this.getPathTo(node);
+        this.log("Testing node mapping @", p, ":", this._testNodeMapping(p, null, true));
       }
       if (corpusChanged) {
         return setTimeout(function() {

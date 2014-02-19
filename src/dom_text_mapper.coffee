@@ -39,7 +39,7 @@ class window.DomTextMapper extends TextMapperCore
 
   USE_TABLE_TEXT_WORKAROUND = true
   USE_EMPTY_TEXT_WORKAROUND = true
-  SELECT_CHILDREN_INSTEAD = ["thead", "tbody", "tfoot", "ol", "a", "caption", "p", "span", "div", "h1", "h2", "h3", "h4", "h5", "h6", "ul", "li", "form"]
+  SELECT_CHILDREN_INSTEAD = ["table", "thead", "tbody", "tfoot", "ol", "a", "caption", "p", "span", "div", "h1", "h2", "h3", "h4", "h5", "h6", "ul", "li", "form"]
 
   @instances: 0
 
@@ -782,13 +782,13 @@ class window.DomTextMapper extends TextMapperCore
       match.element.node.data
 
     # the HTML source of the text inside a text element.
-    @log "Calculating source position at " + match.element.path
+#    @log "Calculating source position at " + match.element.path
     sourceText = match.element.node.data.replace /\n/g, " "
-    @log "sourceText is '" + sourceText + "'"
+#    @log "sourceText is '" + sourceText + "'"
 
     # what gets displayed, when the node is processed by the browser.
     displayText = match.element.content
-    @log "displayText is '" + displayText + "'"
+#    @log "displayText is '" + displayText + "'"
 
     if displayText.length > sourceText.length
       throw new Error "Invalid match at" + match.element.path + ": sourceText is '" + sourceText + "'," +
@@ -797,13 +797,13 @@ class window.DomTextMapper extends TextMapperCore
     # The selected charRange in displayText.
     displayStart = if match.start? then match.start else 0
     displayEnd = if match.end? then match.end else displayText.length
-    @log "Display charRange is: " + displayStart + "-" + displayEnd
+#    @log "Display charRange is: " + displayStart + "-" + displayEnd
 
     if displayEnd is 0
       # Handle empty text nodes  
       match.startCorrected = 0
       match.endCorrected = 0
-      @log "This is empty. Returning"
+#      @log "This is empty. Returning"
       return
 
     sourceIndex = 0
@@ -822,8 +822,8 @@ class window.DomTextMapper extends TextMapperCore
       sourceIndex++
     match.startCorrected = sourceStart
     match.endCorrected = sourceEnd
-    @log "computeSourcePosition done. Corrected charRange is: ",
-      match.startCorrected + "-" + match.endCorrected
+#    @log "computeSourcePosition done. Corrected charRange is: ",
+#      match.startCorrected + "-" + match.endCorrected
     null
 
   # Internal function used to read out the text content of a given node,

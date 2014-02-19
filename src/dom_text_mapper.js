@@ -51,7 +51,7 @@
 
     USE_EMPTY_TEXT_WORKAROUND = true;
 
-    SELECT_CHILDREN_INSTEAD = ["thead", "tbody", "tfoot", "ol", "a", "caption", "p", "span", "div", "h1", "h2", "h3", "h4", "h5", "h6", "ul", "li", "form"];
+    SELECT_CHILDREN_INSTEAD = ["table", "thead", "tbody", "tfoot", "ol", "a", "caption", "p", "span", "div", "h1", "h2", "h3", "h4", "h5", "h6", "ul", "li", "form"];
 
     DomTextMapper.instances = 0;
 
@@ -760,21 +760,16 @@
     DomTextMapper.prototype.computeSourcePositions = function(match) {
       var dc, displayEnd, displayIndex, displayStart, displayText, sc, sourceEnd, sourceIndex, sourceStart, sourceText;
       this.log("In computeSourcePosition", match.element.path, match.element.node.data);
-      this.log("Calculating source position at " + match.element.path);
       sourceText = match.element.node.data.replace(/\n/g, " ");
-      this.log("sourceText is '" + sourceText + "'");
       displayText = match.element.content;
-      this.log("displayText is '" + displayText + "'");
       if (displayText.length > sourceText.length) {
         throw new Error("Invalid match at" + match.element.path + ": sourceText is '" + sourceText + "'," + " displayText is '" + displayText + "'.");
       }
       displayStart = match.start != null ? match.start : 0;
       displayEnd = match.end != null ? match.end : displayText.length;
-      this.log("Display charRange is: " + displayStart + "-" + displayEnd);
       if (displayEnd === 0) {
         match.startCorrected = 0;
         match.endCorrected = 0;
-        this.log("This is empty. Returning");
         return;
       }
       sourceIndex = 0;
@@ -795,7 +790,6 @@
       }
       match.startCorrected = sourceStart;
       match.endCorrected = sourceEnd;
-      this.log("computeSourcePosition done. Corrected charRange is: ", match.startCorrected + "-" + match.endCorrected);
       return null;
     };
 

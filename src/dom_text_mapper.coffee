@@ -51,6 +51,8 @@ class window.DomTextMapper extends TextMapperCore
       @setRealRoot()
     DomTextMapper.instances += 1
 
+    @_calculations = 0
+
   _createSyncAPI: ->
     super
     @_syncAPI.getInfoForPath = @_getInfoForPath
@@ -140,7 +142,7 @@ class window.DomTextMapper extends TextMapperCore
 
     path = @getPathTo @pathStartNode
     node = @path[path].node
-    @collectPositions node, path, null, 0, 0
+    @collectPositions null, node, path, null, 0, 0
     @_corpus = @getNodeContent @path[path].node, false
     @restoreSelection()
 #    @log "Corpus is: " + @_corpus
@@ -174,6 +176,9 @@ class window.DomTextMapper extends TextMapperCore
     # No point in runnign this, we don't even have mapping data yet.
     return unless @path
 
+    # Start the clock
+    startTime = @timestamp()
+
     # Look up the info we have about this node
     path = @getPathTo node
     pathInfo = @path[path]
@@ -183,13 +188,28 @@ class window.DomTextMapper extends TextMapperCore
     # Do we have data about this node?
     while not pathInfo
       # If not, go up one level.
-      @log "We don't have any data about the node @", path, ". Moving up."
+#      @log "We don't have any data about the node @", path, ". Moving up."
       node = node.parentNode
       path = @getPathTo node
       pathInfo = @path[path]
 
-    # Start the clock
-    startTime = @timestamp()
+    unless node is @pathStartNode # If this is not the root node,
+      # Let's find a node where at
+      # least the parent used to be relevant.
+      parentNode = node.parentNode
+      parentPath = @getPathTo parentNode
+      parentPathInfo = @path[parentPath]
+      while parentPathInfo.irrelevant
+#        if parentPathInfo.irrelevant
+#          @log "The parent of", path, "@", parentPath,
+#           "is irrelevant. Moving up."
+        node = parentNode
+        path = parentPath
+        pathInfo = parentPathInfo
+
+        parentNode = node.parentNode
+        parentPath = @getPathTo parentNode
+        parentPathInfo = @path[parentPath]
 
     # Save the selection, since we will have to restore it later.
     @saveSelection()
@@ -225,9 +245,11 @@ class window.DomTextMapper extends TextMapperCore
       # If yes, drop all data about this node / path
       pathsToDrop.push path
 
-      # Also save the start and end positions from the pathInfo
-      oldStart = pathInfo.start
-      oldEnd = pathInfo.end
+      # Only our parent must be relevant, the node itself might not be.
+      unless pathInfo.irrelevant
+        # Also save the start and end positions from the pathInfo
+        oldStart = pathInfo.start
+        oldEnd = pathInfo.end
 
     # Actually drop the selected paths
     delete @path[p] for p in pathsToDrop
@@ -240,7 +262,13 @@ class window.DomTextMapper extends TextMapperCore
       unless node is @pathStartNode
         #@log "Updating ancestors and siblings"
         @_alterAncestorsMappingData node, pathInfo, oldStart, oldEnd, content
-        @_alterSiblingsMappingData node, pathInfo, oldStart, oldEnd, content
+        # Only our parent must be relevant, the node itself might not be.
+        # And in that case, it has no oldStart or oldEnd values.
+        if oldStart?
+          @_alterSiblingsMappingData node, pathInfo,
+            oldStart, oldEnd, content
+#        else
+#          @log "Postponing the update of siblings, because we don't have the position yet."
 
     # Phase 3: re-scan the invalidated part
 
@@ -254,7 +282,7 @@ class window.DomTextMapper extends TextMapperCore
     if node is @pathStartNode
       # Yes, we have rescanned starting with the root node!
       @log "Ended up rescanning the whole doc."
-      @collectPositions node, path, null, 0, 0
+      @collectPositions null, node, path, null, 0, 0
       @_updateCorpus lengthDelta
     else
       # This was not the root path, so we must have a valid parent.
@@ -269,8 +297,22 @@ class window.DomTextMapper extends TextMapperCore
         predecessorInfo.end - parentPathInfo.start
 
       # Recursively calculate all the positions
-      @collectPositions node, path, parentPathInfo.content,
+      calculation = @_getNewCalculationId()
+      @collectPositions calculation, node, path, parentPathInfo.content,
           parentPathInfo.start, oldIndex
+
+    # Phase 4: Update the data of the siblings, if it could not be
+    # done beforehand
+
+    if corpusChanged and (node isnt @pathStartNode) and (not oldStart?)
+      pathInfo = @path[path]
+      oldStart = oldEnd = pathInfo.start
+      content = pathInfo.content
+#      @log "I should update the siblings now. oldStart is", oldStart,
+#        "calculation id is", calculation
+#      @log pathInfo
+      @_alterSiblingsMappingData node, pathInfo,
+        oldStart, oldEnd, content, calculation
         
 #    @log "Data update took " + (@timestamp() - startTime) + " ms."
 
@@ -297,24 +339,26 @@ class window.DomTextMapper extends TextMapperCore
       content = @path["."].content   # This is the base we are going to use
       if @_ignorePos?                # Is there stuff at the end to ignore?
         @_ignorePos += lengthDelta   # Update the ignore index
-        if @_ignorePos               # Is there anything left?
-          content[ ... @_ignorePos ] # Return the wanted segment
-        else                         # No, whole text is ignored
-          ""                         # Return an empty string
+        content[ ... @_ignorePos ]   # Return the wanted segment
       else                           # There is no ignore
         content                      # We are going to use the whole content
 
 
   # Given the fact the the corpus of a given note has changed,
-  # update the mapping info of its ancestors
-  _alterAncestorsMappingData: (node, pathInfo, oldStart, oldEnd, newContent) ->
-
-    # Don't bother if this is a mystery node; the ancestors don't contain
-    # this content anyway
-    return if pathInfo.mystery
+  # update the mapping info of its ancestors.
+  #
+  # node:       the child node that has changed
+  # pathInfo:   path info about the child node
+  # oldStart:   the position where the changed segment used to start
+  # oldEnd:     the position where the changed segment used to end
+  # newContent: the new content which has replaced the changed segment
+  _alterAncestorsMappingData: (node, nPathInfo, oldStart, oldEnd, newContent) ->
 
     # Calculate how the length has changed
-    lengthDelta = newContent.length - (oldEnd - oldStart)
+    oldLength = if oldStart? then oldEnd - oldStart else 0
+    lengthDelta = newContent.length - oldLength
+    if isNaN lengthDelta
+      throw new Error "Internal error: got a NaN"
 
     # Is this the root node?
     if node is @pathStartNode
@@ -323,50 +367,140 @@ class window.DomTextMapper extends TextMapperCore
       # There are no more ancestors, so return
       return
 
-    parentPath = @_parentPath pathInfo.path
+    parentPath = @_parentPath nPathInfo.path
     parentPathInfo = @path[parentPath]
 
-    # Save old start and end
-    opStart = parentPathInfo.start
-    opEnd = parentPathInfo.end
+    if parentPathInfo.irrelevant
+      @log "WARNING: irrelevant ancestors are not supposed to be present here.",
+        "Expect trouble."
 
-    # Calculate where the old content used to go in this parent
-    pStart = oldStart - opStart
-    pEnd = oldEnd - opStart
-    #@log "Relative to the parent: [", pStart, "..", pEnd, "]"
+    # Is our parent node relevant at all?
+    if parentPathInfo.irrelevant
+      throw new Error "Internal error. We should never launch an update " +
+        "from a child of an irrelevant node."
 
-    pContent = parentPathInfo.content
+    # Try to incremantally update the data about the parent node
+    if oldStart?
+      # We know the positions about both this node and the parent node
 
-    # Calculate the changed content
+      if oldEnd > parentPathInfo.end
+        @log "Error: child's alleged old end (", oldEnd, ") is beyond",
+          "the parent's end (",parentPathInfo.end,")!"
+        throw new Error "wtf"
 
-    # Get the prefix
-    prefix = pContent[ ... pStart ]
+      # Save old parent start and end
+      opStart = parentPathInfo.start
+      opEnd = parentPathInfo.end
 
-    # Get the suffix
-    suffix = pContent[pEnd ..]
+      # Calculate where the old content used to go in this parent
+      pStart = oldStart - opStart
+      pEnd = oldEnd - opStart
+      #@log "Relative to the parent: [", pStart, "..", pEnd, "]"
 
-    # Replace the changed part in the parent's content
-    parentPathInfo.content = newContent = prefix + newContent + suffix
+      if pEnd > parentPathInfo.length
+        @log "Segment is supposed be at [", pStart, "..", pEnd, "], but",
+          "parent's content is only", parentPathInfo.length, "chars long!"
+        throw new Error "wtf"
 
-    # Fix up the length and the end position
-    parentPathInfo.length += lengthDelta
-    parentPathInfo.end += lengthDelta
-    if isNaN parentPathInfo.end
-      throw new Error "Internal error: got a NaN"
+      pContent = parentPathInfo.content
 
-    # Do the same with the next ancestor
-    @_alterAncestorsMappingData parentPathInfo.node, parentPathInfo,
-      opStart, opEnd, newContent
+      # Calculate the changed content
 
+      # Get the prefix
+      prefix = pContent[ ... pStart ]
+
+      # Get the old content
+      oldPart = pContent[ pStart ... pEnd ]
+
+      unless oldPart.length is oldEnd - oldStart
+        @log "OldPart's real length is", oldPart.length,
+          "but oldEnd-oldStart is", oldEnd - oldStart
+        throw new Error "wtf"
+
+      # Get the suffix
+      suffix = pContent[ pEnd ... ]
+
+      # Replace the changed part in the parent's content
+      parentPathInfo.content = pContent = prefix + newContent + suffix
+
+      # Fix up the length and the end position
+      parentPathInfo.length += lengthDelta
+
+      unless parentPathInfo.content.length is parentPathInfo.length
+        throw new Error "Length mismatch!"
+
+      if parentPath is "." and parentPathInfo.length < 80
+        throw new Error "Error: root length botched!"
+
+      if parentPathInfo.length
+        # We have real content here
+        parentPathInfo.end += lengthDelta
+        if isNaN parentPathInfo.end
+          throw new Error "Internal error: got a NaN"
+      else
+        # No real content. Mark this as irrelevant.
+        unless parentPathInfo.irrelevant
+#          @log "Marking parent @", parentPath, "as irrelevant, after deleting",
+#            -lengthDelta, "characters."
+          @_markNodeAsIrrelevant parentPathInfo.node, parentPath
+        delete parentPathInfo.start
+        delete parentPathInfo.end
+
+      # Now let's repalce the same changed segment in the next ancestor, too
+      @_alterAncestorsMappingData parentPathInfo.node, parentPathInfo,
+        oldStart, oldEnd, newContent
+
+    else
+      # No, we can't use the trivial method. (Probably because
+      # this node used to be irrelevant, and thus it did not have
+      # a position before.
+
+      # But at least we have proper data about the parent.
+
+      # So we need to update the content, length and end fields
+      # manually.
+      parentPathInfo.content = pContent =
+        @getNodeContent parentPathInfo.node, false
+      parentPathInfo.length = pContent.length
+
+      if parentPathInfo.length
+        # We have real content here
+
+        # Finally update the end position
+        parentPathInfo.end = parentPathInfo.start + parentPathInfo.length
+
+        # Some error checking
+        if isNaN parentPathInfo.end
+          throw new Error "Internal error: got a NaN"
+
+        # Do the same with the next ancestor. Since we don't have a valid
+        # oldStart value for the original segment, let's use this whole
+        # node as the changed segment for the next round:
+        @_alterAncestorsMappingData parentPathInfo.node, parentPathInfo,
+          parentPathInfo.start, parentPathInfo.start, pContent
+      else
+        # No real content.
+
+        # Save old parent start and end
+        opStart = parentPathInfo.start
+        opEnd = parentPathInfo.end
+
+        # Mark this as irrelevant.
+        unless parentPathInfo.irrelevant
+#          @log "Marking parent @", parentPath, "as irrelevant, after deleting",
+#            -lengthDelta, "characters."
+          @_markNodeAsIrrelevant parentPathInfo.node, parentPath
+        delete parentPathInfo.start
+        delete parentPathInfo.end
+
+        # Tell the parent node that this part is now empty
+        @_alterAncestorsMappingData parentPathInfo.node, parentPathInfo,
+          opStart, opEnd, ""
 
   # Given the fact the the corpus of a given note has changed,
   # update the mapping info of all later nodes.
-  _alterSiblingsMappingData: (node, pathInfo, oldStart, oldEnd, newContent) ->
+  _alterSiblingsMappingData: (node, pathInfo, oldStart, oldEnd, newContent, calculationId = NaN) ->
 
-    # Don't bother if this is a mystery node; the ancestors don't contain
-    # this content anyway, so no cortinates to fix up.
-    return if pathInfo.mystery
-        
     # Calculate the offset, based on the difference in length
     delta = newContent.length - (oldEnd - oldStart)
 
@@ -375,7 +509,7 @@ class window.DomTextMapper extends TextMapperCore
     return unless delta
 
     # Go over all the elements that are later then the changed node
-    for p, info of @path when (not info.mystery) and info.start >= oldEnd
+    for p, info of @path when (not info.irrelevant) and info.calculatedAt isnt calculationId and info.start >= oldEnd
       # Correct their positions
       info.start += delta
       info.end += delta
@@ -580,13 +714,15 @@ class window.DomTextMapper extends TextMapperCore
 
     results
 
-  # Find the first predecessor of a given node, which is not a mystery node
+  # Find the first predecessor of a given node, which is relevant
   _findRelevantPredecessor: (successor, parentPath) ->
     node = successor.previousSibling
     while node
       path = parentPath + "/" + @getPathSegment node
       info = @path[path]
-      if info.mystery or info.irrelevant
+      unless info?
+        throw new Error "Internal error: found no data for path " + path + ". (Wondered into ignored area?"
+      if info.irrelevant
         node = node.previousSibling
       else
         return info
@@ -642,14 +778,14 @@ class window.DomTextMapper extends TextMapperCore
       length: cont.length
       node : node
     if cont.length
-      if verbose then @log "Collected info about path " + path
+      if verbose then @log "Collected info @", path
       if invisible
         @log "Something seems to be wrong. I see visible content @ " +
             path + ", while some of the ancestor nodes reported empty contents.
  Probably a new selection API bug...."
         @log "Anyway, text is '" + cont + "'."        
     else
-      if verbose then @log "Found no content at path " + path
+      if verbose then @log "Found no content @" + path
       invisible = true
 
     # Step two: cover all children.
@@ -728,7 +864,7 @@ class window.DomTextMapper extends TextMapperCore
       sel.addRange realRange
     else
       if USE_TABLE_TEXT_WORKAROUND and node.nodeType is Node.TEXT_NODE and
-          node.parentNode.tagName.toLowerCase() is "table"
+          @isWhitespace node
         # This is a text element that should not even be here.
         # Selecting it might select the whole table,
         # so we don't select anything
@@ -842,29 +978,23 @@ class window.DomTextMapper extends TextMapperCore
     content
 
 
-  # Marking a node as irrelevent means that we have determined
+  # Marking a node as irrelevant means that we have determined
   # that this node does not contribute to the corpus at all.
   _markNodeAsIrrelevant: (node, path, verbose) ->
     if verbose
-       @log "Marking node at path", path, "as irrelevant."
-    @path[path].irrelevant = true
+       @log "Marking node @", path, "as irrelevant."
+    info = @path[path]
+    if info
+      info.irrelevant = true
+      for item in @_enumerateChildren node, path, verbose
+        @_markNodeAsIrrelevant item.node, item.path, verbose
+#    else
+#      @log "Warning: when marking as irrelevant, found no info @", path
 
-    for item in @_enumerateChildren node, path, verbose
-      @_markNodeAsIrrelevant item.node, item.path, verbose
 
-  # Marking a node as mystery means that we have determined
-  # that this node has some content, but it does not seem to be part
-  # of the corpus of it's parent. How is this possible is still
-  # a mistery. Our current guess is that these nodes are always
-  # invisible, so they should not really have any "user visible"
-  # content, so this is just a fluke of the selection API implementations.
-  _markNodeAsMystery: (node, path, verbose) ->
-    if verbose
-       @log "Marking node at path", path, "as mystery."
-    @path[path].mystery = true
-
-    for item in @_enumerateChildren node, path, verbose
-      @_markNodeAsMystery item.node, item.path, verbose
+  # Internal function to get a new calculation ID
+  # for position collection
+  _getNewCalculationId: -> @_calculations++
 
   # Internal function to collect mapping data from a given DOM element.
   # 
@@ -885,7 +1015,8 @@ class window.DomTextMapper extends TextMapperCore
   # Returns:
   #    the first character offset position in the content of this node's
   #    parent node that is not accounted for by this node
-  collectPositions: (node, path, parentContent = null, parentIndex = 0, index = 0) ->
+  collectPositions: (calculationId, node, path, parentContent = null, parentIndex = 0, index = 0) ->
+    calculationId ?= @_getNewCalculationId()
     if isNaN parentIndex
       throw new Error "Internal error: got a NaN"
     debug = false # path in ["./DIV", "./DIV/DIV"]
@@ -902,6 +1033,7 @@ class window.DomTextMapper extends TextMapperCore
       return index
 
     pathInfo = @path[path]
+    pathInfo.calculatedAt = calculationId
     content = pathInfo?.content
 
     unless content
@@ -923,11 +1055,9 @@ class window.DomTextMapper extends TextMapperCore
     if startIndex is -1
       # content of node is not present in parent's content - probably hidden,
       # or something similar
-#      @log "Content of", path, "is not present in content of it's parent",
-#       "(Content: '" + content + "'.)"
-      @_markNodeAsMystery node, path, debug
-      return index
-
+      throw new Error "The content @ '" + path +
+        "' is not present in the content of it's parent. " +
+        "(Content: '" + content + "'.)"
 
     endIndex = startIndex + content.length
     atomic = not node.hasChildNodes()
@@ -942,7 +1072,7 @@ class window.DomTextMapper extends TextMapperCore
 
     if not atomic # If this node has children,
       for item in @_enumerateChildren node, path # Take the children
-        pos = @collectPositions item.node, item.path, content, # and repeat
+        pos = @collectPositions calculationId, item.node, item.path, content, # and repeat
           parentIndex + startIndex, pos
 
     endIndex
@@ -972,9 +1102,6 @@ class window.DomTextMapper extends TextMapperCore
     unless info
       console.trace()
       throw new Error "Could not look up node @ '" + path + "'!"
-
-    # Don't bother with weird nodes
-    return true if info.mystery
 
     # Get the range from corpus
     inCorpus = if (info.start? and info.end?)
@@ -1023,7 +1150,7 @@ class window.DomTextMapper extends TextMapperCore
     @log "Verifying map info: was it all properly traversed & post-processed?"
     correct = true
     for i, p of @path
-      unless p.irrelevant or p.mystery or p.atomic?
+      unless p.irrelevant or p.atomic?
         if verbose or correct
           @log i, "is missing data."
         correct = false
@@ -1198,7 +1325,7 @@ class window.DomTextMapper extends TextMapperCore
     # Collect attribute changed nodes
     for k, list of changes.attributeChanged
       for n in list
-        @_addToTrees trees, n, "attribute changed", k
+        @_addToTrees trees, n, "attribute changed", k, n.getAttribute k
 
     # Collect character data changed nodes
 #    trees.add n for n in changes.characterDataChanged

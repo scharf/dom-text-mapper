@@ -72,6 +72,7 @@
         this.setRealRoot();
       }
       DomTextMapper.instances += 1;
+      this._calculations = 0;
     }
 
     DomTextMapper.prototype._createSyncAPI = function() {
@@ -145,7 +146,7 @@
       this.log("Phase I (Path traversal) took " + (t1 - startTime) + " ms.");
       path = this.getPathTo(this.pathStartNode);
       node = this.path[path].node;
-      this.collectPositions(node, path, null, 0, 0);
+      this.collectPositions(null, node, path, null, 0, 0);
       this._corpus = this.getNodeContent(this.path[path].node, false);
       this.restoreSelection();
       t2 = this.timestamp();
@@ -170,7 +171,7 @@
     };
 
     DomTextMapper.prototype._performUpdateOnNode = function(node, reason) {
-      var content, corpusChanged, data, lengthDelta, oldContent, oldEnd, oldIndex, oldStart, p, parentPath, parentPathInfo, path, pathInfo, pathsToDrop, predecessorInfo, prefix, startTime, _i, _len;
+      var calculation, content, corpusChanged, data, lengthDelta, oldContent, oldEnd, oldIndex, oldStart, p, parentNode, parentPath, parentPathInfo, path, pathInfo, pathsToDrop, predecessorInfo, prefix, startTime, _i, _len;
       if (reason == null) {
         reason = "(no reason)";
       }
@@ -180,15 +181,27 @@
       if (!this.path) {
         return;
       }
+      startTime = this.timestamp();
       path = this.getPathTo(node);
       pathInfo = this.path[path];
       while (!pathInfo) {
-        this.log("We don't have any data about the node @", path, ". Moving up.");
         node = node.parentNode;
         path = this.getPathTo(node);
         pathInfo = this.path[path];
       }
-      startTime = this.timestamp();
+      if (node !== this.pathStartNode) {
+        parentNode = node.parentNode;
+        parentPath = this.getPathTo(parentNode);
+        parentPathInfo = this.path[parentPath];
+        while (parentPathInfo.irrelevant) {
+          node = parentNode;
+          path = parentPath;
+          pathInfo = parentPathInfo;
+          parentNode = node.parentNode;
+          parentPath = this.getPathTo(parentNode);
+          parentPathInfo = this.path[parentPath];
+        }
+      }
       this.saveSelection();
       oldContent = pathInfo.content;
       content = this.getNodeContent(node, false);
@@ -211,8 +224,10 @@
       }).call(this);
       if (corpusChanged) {
         pathsToDrop.push(path);
-        oldStart = pathInfo.start;
-        oldEnd = pathInfo.end;
+        if (!pathInfo.irrelevant) {
+          oldStart = pathInfo.start;
+          oldEnd = pathInfo.end;
+        }
       }
       for (_i = 0, _len = pathsToDrop.length; _i < _len; _i++) {
         p = pathsToDrop[_i];
@@ -221,20 +236,29 @@
       if (corpusChanged) {
         if (node !== this.pathStartNode) {
           this._alterAncestorsMappingData(node, pathInfo, oldStart, oldEnd, content);
-          this._alterSiblingsMappingData(node, pathInfo, oldStart, oldEnd, content);
+          if (oldStart != null) {
+            this._alterSiblingsMappingData(node, pathInfo, oldStart, oldEnd, content);
+          }
         }
       }
       this.traverseSubTree(node, path);
       if (node === this.pathStartNode) {
         this.log("Ended up rescanning the whole doc.");
-        this.collectPositions(node, path, null, 0, 0);
+        this.collectPositions(null, node, path, null, 0, 0);
         this._updateCorpus(lengthDelta);
       } else {
         parentPath = this._parentPath(path);
         parentPathInfo = this.path[parentPath];
         predecessorInfo = this._findRelevantPredecessor(node, parentPath);
         oldIndex = predecessorInfo == null ? 0 : predecessorInfo.end - parentPathInfo.start;
-        this.collectPositions(node, path, parentPathInfo.content, parentPathInfo.start, oldIndex);
+        calculation = this._getNewCalculationId();
+        this.collectPositions(calculation, node, path, parentPathInfo.content, parentPathInfo.start, oldIndex);
+      }
+      if (corpusChanged && (node !== this.pathStartNode) && (oldStart == null)) {
+        pathInfo = this.path[path];
+        oldStart = oldEnd = pathInfo.start;
+        content = pathInfo.content;
+        this._alterSiblingsMappingData(node, pathInfo, oldStart, oldEnd, content, calculation);
       }
       this.restoreSelection();
       return corpusChanged;
@@ -258,11 +282,7 @@
           content = this.path["."].content;
           if (this._ignorePos != null) {
             this._ignorePos += lengthDelta;
-            if (this._ignorePos) {
-              return content.slice(0, this._ignorePos);
-            } else {
-              return "";
-            }
+            return content.slice(0, this._ignorePos);
           } else {
             return content;
           }
@@ -270,38 +290,93 @@
       }).call(this);
     };
 
-    DomTextMapper.prototype._alterAncestorsMappingData = function(node, pathInfo, oldStart, oldEnd, newContent) {
-      var lengthDelta, opEnd, opStart, pContent, pEnd, pStart, parentPath, parentPathInfo, prefix, suffix;
-      if (pathInfo.mystery) {
-        return;
+    DomTextMapper.prototype._alterAncestorsMappingData = function(node, nPathInfo, oldStart, oldEnd, newContent) {
+      var lengthDelta, oldLength, oldPart, opEnd, opStart, pContent, pEnd, pStart, parentPath, parentPathInfo, prefix, suffix;
+      oldLength = oldStart != null ? oldEnd - oldStart : 0;
+      lengthDelta = newContent.length - oldLength;
+      if (isNaN(lengthDelta)) {
+        throw new Error("Internal error: got a NaN");
       }
-      lengthDelta = newContent.length - (oldEnd - oldStart);
       if (node === this.pathStartNode) {
         this._updateCorpus(lengthDelta);
         return;
       }
-      parentPath = this._parentPath(pathInfo.path);
+      parentPath = this._parentPath(nPathInfo.path);
       parentPathInfo = this.path[parentPath];
-      opStart = parentPathInfo.start;
-      opEnd = parentPathInfo.end;
-      pStart = oldStart - opStart;
-      pEnd = oldEnd - opStart;
-      pContent = parentPathInfo.content;
-      prefix = pContent.slice(0, pStart);
-      suffix = pContent.slice(pEnd);
-      parentPathInfo.content = newContent = prefix + newContent + suffix;
-      parentPathInfo.length += lengthDelta;
-      parentPathInfo.end += lengthDelta;
-      if (isNaN(parentPathInfo.end)) {
-        throw new Error("Internal error: got a NaN");
+      if (parentPathInfo.irrelevant) {
+        this.log("WARNING: irrelevant ancestors are not supposed to be present here.", "Expect trouble.");
       }
-      return this._alterAncestorsMappingData(parentPathInfo.node, parentPathInfo, opStart, opEnd, newContent);
+      if (parentPathInfo.irrelevant) {
+        throw new Error("Internal error. We should never launch an update " + "from a child of an irrelevant node.");
+      }
+      if (oldStart != null) {
+        if (oldEnd > parentPathInfo.end) {
+          this.log("Error: child's alleged old end (", oldEnd, ") is beyond", "the parent's end (", parentPathInfo.end, ")!");
+          throw new Error("wtf");
+        }
+        opStart = parentPathInfo.start;
+        opEnd = parentPathInfo.end;
+        pStart = oldStart - opStart;
+        pEnd = oldEnd - opStart;
+        if (pEnd > parentPathInfo.length) {
+          this.log("Segment is supposed be at [", pStart, "..", pEnd, "], but", "parent's content is only", parentPathInfo.length, "chars long!");
+          throw new Error("wtf");
+        }
+        pContent = parentPathInfo.content;
+        prefix = pContent.slice(0, pStart);
+        oldPart = pContent.slice(pStart, pEnd);
+        if (oldPart.length !== oldEnd - oldStart) {
+          this.log("OldPart's real length is", oldPart.length, "but oldEnd-oldStart is", oldEnd - oldStart);
+          throw new Error("wtf");
+        }
+        suffix = pContent.slice(pEnd);
+        parentPathInfo.content = pContent = prefix + newContent + suffix;
+        parentPathInfo.length += lengthDelta;
+        if (parentPathInfo.content.length !== parentPathInfo.length) {
+          throw new Error("Length mismatch!");
+        }
+        if (parentPath === "." && parentPathInfo.length < 80) {
+          throw new Error("Error: root length botched!");
+        }
+        if (parentPathInfo.length) {
+          parentPathInfo.end += lengthDelta;
+          if (isNaN(parentPathInfo.end)) {
+            throw new Error("Internal error: got a NaN");
+          }
+        } else {
+          if (!parentPathInfo.irrelevant) {
+            this._markNodeAsIrrelevant(parentPathInfo.node, parentPath);
+          }
+          delete parentPathInfo.start;
+          delete parentPathInfo.end;
+        }
+        return this._alterAncestorsMappingData(parentPathInfo.node, parentPathInfo, oldStart, oldEnd, newContent);
+      } else {
+        parentPathInfo.content = pContent = this.getNodeContent(parentPathInfo.node, false);
+        parentPathInfo.length = pContent.length;
+        if (parentPathInfo.length) {
+          parentPathInfo.end = parentPathInfo.start + parentPathInfo.length;
+          if (isNaN(parentPathInfo.end)) {
+            throw new Error("Internal error: got a NaN");
+          }
+          return this._alterAncestorsMappingData(parentPathInfo.node, parentPathInfo, parentPathInfo.start, parentPathInfo.start, pContent);
+        } else {
+          opStart = parentPathInfo.start;
+          opEnd = parentPathInfo.end;
+          if (!parentPathInfo.irrelevant) {
+            this._markNodeAsIrrelevant(parentPathInfo.node, parentPath);
+          }
+          delete parentPathInfo.start;
+          delete parentPathInfo.end;
+          return this._alterAncestorsMappingData(parentPathInfo.node, parentPathInfo, opStart, opEnd, "");
+        }
+      }
     };
 
-    DomTextMapper.prototype._alterSiblingsMappingData = function(node, pathInfo, oldStart, oldEnd, newContent) {
+    DomTextMapper.prototype._alterSiblingsMappingData = function(node, pathInfo, oldStart, oldEnd, newContent, calculationId) {
       var delta, info, p, _ref, _results;
-      if (pathInfo.mystery) {
-        return;
+      if (calculationId == null) {
+        calculationId = NaN;
       }
       delta = newContent.length - (oldEnd - oldStart);
       if (!delta) {
@@ -311,7 +386,7 @@
       _results = [];
       for (p in _ref) {
         info = _ref[p];
-        if (!((!info.mystery) && info.start >= oldEnd)) {
+        if (!((!info.irrelevant) && info.calculatedAt !== calculationId && info.start >= oldEnd)) {
           continue;
         }
         info.start += delta;
@@ -544,7 +619,10 @@
       while (node) {
         path = parentPath + "/" + this.getPathSegment(node);
         info = this.path[path];
-        if (info.mystery || info.irrelevant) {
+        if (info == null) {
+          throw new Error("Internal error: found no data for path " + path + ". (Wondered into ignored area?");
+        }
+        if (info.irrelevant) {
           node = node.previousSibling;
         } else {
           return info;
@@ -619,7 +697,7 @@
       };
       if (cont.length) {
         if (verbose) {
-          this.log("Collected info about path " + path);
+          this.log("Collected info @", path);
         }
         if (invisible) {
           this.log("Something seems to be wrong. I see visible content @ " + path + ", while some of the ancestor nodes reported empty contents. Probably a new selection API bug....");
@@ -627,7 +705,7 @@
         }
       } else {
         if (verbose) {
-          this.log("Found no content at path " + path);
+          this.log("Found no content @" + path);
         }
         invisible = true;
       }
@@ -705,7 +783,7 @@
         realRange.setEndAfter(children[children.length - 1]);
         sel.addRange(realRange);
       } else {
-        if (USE_TABLE_TEXT_WORKAROUND && node.nodeType === Node.TEXT_NODE && node.parentNode.tagName.toLowerCase() === "table") {
+        if (USE_TABLE_TEXT_WORKAROUND && node.nodeType === Node.TEXT_NODE && this.isWhitespace(node)) {
 
         } else {
           try {
@@ -809,36 +887,28 @@
     };
 
     DomTextMapper.prototype._markNodeAsIrrelevant = function(node, path, verbose) {
-      var item, _i, _len, _ref, _results;
+      var info, item, _i, _len, _ref, _results;
       if (verbose) {
-        this.log("Marking node at path", path, "as irrelevant.");
+        this.log("Marking node @", path, "as irrelevant.");
       }
-      this.path[path].irrelevant = true;
-      _ref = this._enumerateChildren(node, path, verbose);
-      _results = [];
-      for (_i = 0, _len = _ref.length; _i < _len; _i++) {
-        item = _ref[_i];
-        _results.push(this._markNodeAsIrrelevant(item.node, item.path, verbose));
+      info = this.path[path];
+      if (info) {
+        info.irrelevant = true;
+        _ref = this._enumerateChildren(node, path, verbose);
+        _results = [];
+        for (_i = 0, _len = _ref.length; _i < _len; _i++) {
+          item = _ref[_i];
+          _results.push(this._markNodeAsIrrelevant(item.node, item.path, verbose));
+        }
+        return _results;
       }
-      return _results;
     };
 
-    DomTextMapper.prototype._markNodeAsMystery = function(node, path, verbose) {
-      var item, _i, _len, _ref, _results;
-      if (verbose) {
-        this.log("Marking node at path", path, "as mystery.");
-      }
-      this.path[path].mystery = true;
-      _ref = this._enumerateChildren(node, path, verbose);
-      _results = [];
-      for (_i = 0, _len = _ref.length; _i < _len; _i++) {
-        item = _ref[_i];
-        _results.push(this._markNodeAsMystery(item.node, item.path, verbose));
-      }
-      return _results;
+    DomTextMapper.prototype._getNewCalculationId = function() {
+      return this._calculations++;
     };
 
-    DomTextMapper.prototype.collectPositions = function(node, path, parentContent, parentIndex, index) {
+    DomTextMapper.prototype.collectPositions = function(calculationId, node, path, parentContent, parentIndex, index) {
       var atomic, content, debug, endIndex, item, pathInfo, pos, startIndex, _i, _len, _ref;
       if (parentContent == null) {
         parentContent = null;
@@ -848,6 +918,9 @@
       }
       if (index == null) {
         index = 0;
+      }
+      if (calculationId == null) {
+        calculationId = this._getNewCalculationId();
       }
       if (isNaN(parentIndex)) {
         throw new Error("Internal error: got a NaN");
@@ -867,6 +940,7 @@
         return index;
       }
       pathInfo = this.path[path];
+      pathInfo.calculatedAt = calculationId;
       content = pathInfo != null ? pathInfo.content : void 0;
       if (!content) {
         pathInfo.start = parentIndex + index;
@@ -883,8 +957,7 @@
       }
       startIndex = parentContent != null ? parentContent.indexOf(content, index) : index;
       if (startIndex === -1) {
-        this._markNodeAsMystery(node, path, debug);
-        return index;
+        throw new Error("The content @ '" + path + "' is not present in the content of it's parent. " + "(Content: '" + content + "'.)");
       }
       endIndex = startIndex + content.length;
       atomic = !node.hasChildNodes();
@@ -901,7 +974,7 @@
         _ref = this._enumerateChildren(node, path);
         for (_i = 0, _len = _ref.length; _i < _len; _i++) {
           item = _ref[_i];
-          pos = this.collectPositions(item.node, item.path, content, parentIndex + startIndex, pos);
+          pos = this.collectPositions(calculationId, item.node, item.path, content, parentIndex + startIndex, pos);
         }
       }
       return endIndex;
@@ -942,9 +1015,6 @@
       if (!info) {
         console.trace();
         throw new Error("Could not look up node @ '" + path + "'!");
-      }
-      if (info.mystery) {
-        return true;
       }
       inCorpus = (info.start != null) && (info.end != null) ? this._corpus.slice(info.start, info.end) : "";
       realContent = this.getNodeContent(info.node);
@@ -987,7 +1057,7 @@
       _ref = this.path;
       for (i in _ref) {
         p = _ref[i];
-        if (!(p.irrelevant || p.mystery || (p.atomic != null))) {
+        if (!(p.irrelevant || (p.atomic != null))) {
           if (verbose || correct) {
             this.log(i, "is missing data.");
           }
@@ -1174,7 +1244,7 @@
         list = _ref1[k];
         for (_j = 0, _len1 = list.length; _j < _len1; _j++) {
           n = list[_j];
-          this._addToTrees(trees, n, "attribute changed", k);
+          this._addToTrees(trees, n, "attribute changed", k, n.getAttribute(k));
         }
       }
       _ref2 = changes.characterDataChanged;

@@ -376,7 +376,7 @@ class window.DomTextMapper extends TextMapperCore
 
     # Is our parent node relevant at all?
     if parentPathInfo.irrelevant
-      throw new Error "Internal error. We should never launch an update " +
+      throw new Error "Internal error: we should never launch an update " +
         "from a child of an irrelevant node."
 
     # Try to incremantally update the data about the parent node
@@ -384,9 +384,8 @@ class window.DomTextMapper extends TextMapperCore
       # We know the positions about both this node and the parent node
 
       if oldEnd > parentPathInfo.end
-        @log "Error: child's alleged old end (", oldEnd, ") is beyond",
-          "the parent's end (",parentPathInfo.end,")!"
-        throw new Error "wtf"
+        throw new Error "Internal error: child's alleged old end (" + oldEnd +
+          ") is beyond the parent's end (" + parentPathInfo.end + ")!"
 
       # Save old parent start and end
       opStart = parentPathInfo.start
@@ -398,9 +397,9 @@ class window.DomTextMapper extends TextMapperCore
       #@log "Relative to the parent: [", pStart, "..", pEnd, "]"
 
       if pEnd > parentPathInfo.length
-        @log "Segment is supposed be at [", pStart, "..", pEnd, "], but",
-          "parent's content is only", parentPathInfo.length, "chars long!"
-        throw new Error "wtf"
+        throw new Error "Internal error: segment is supposed be at [" + pStart +
+          "..." + pEnd + "], but parent's content is only " +
+          parentPathInfo.length + " chars long!"
 
       pContent = parentPathInfo.content
 
@@ -413,9 +412,8 @@ class window.DomTextMapper extends TextMapperCore
       oldPart = pContent[ pStart ... pEnd ]
 
       unless oldPart.length is oldEnd - oldStart
-        @log "OldPart's real length is", oldPart.length,
-          "but oldEnd-oldStart is", oldEnd - oldStart
-        throw new Error "wtf"
+        throw new Error "Internal error: oldPart's real length is " +
+          oldPart.length + ", but oldEnd-oldStart is " + (oldEnd - oldStart)
 
       # Get the suffix
       suffix = pContent[ pEnd ... ]

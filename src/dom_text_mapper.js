@@ -307,27 +307,24 @@
         this.log("WARNING: irrelevant ancestors are not supposed to be present here.", "Expect trouble.");
       }
       if (parentPathInfo.irrelevant) {
-        throw new Error("Internal error. We should never launch an update " + "from a child of an irrelevant node.");
+        throw new Error("Internal error: we should never launch an update " + "from a child of an irrelevant node.");
       }
       if (oldStart != null) {
         if (oldEnd > parentPathInfo.end) {
-          this.log("Error: child's alleged old end (", oldEnd, ") is beyond", "the parent's end (", parentPathInfo.end, ")!");
-          throw new Error("wtf");
+          throw new Error("Internal error: child's alleged old end (" + oldEnd + ") is beyond the parent's end (" + parentPathInfo.end + ")!");
         }
         opStart = parentPathInfo.start;
         opEnd = parentPathInfo.end;
         pStart = oldStart - opStart;
         pEnd = oldEnd - opStart;
         if (pEnd > parentPathInfo.length) {
-          this.log("Segment is supposed be at [", pStart, "..", pEnd, "], but", "parent's content is only", parentPathInfo.length, "chars long!");
-          throw new Error("wtf");
+          throw new Error("Internal error: segment is supposed be at [" + pStart + "..." + pEnd + "], but parent's content is only " + parentPathInfo.length + " chars long!");
         }
         pContent = parentPathInfo.content;
         prefix = pContent.slice(0, pStart);
         oldPart = pContent.slice(pStart, pEnd);
         if (oldPart.length !== oldEnd - oldStart) {
-          this.log("OldPart's real length is", oldPart.length, "but oldEnd-oldStart is", oldEnd - oldStart);
-          throw new Error("wtf");
+          throw new Error("Internal error: oldPart's real length is " + oldPart.length + ", but oldEnd-oldStart is " + (oldEnd - oldStart));
         }
         suffix = pContent.slice(pEnd);
         parentPathInfo.content = pContent = prefix + newContent + suffix;

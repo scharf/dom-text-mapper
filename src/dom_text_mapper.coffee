@@ -289,8 +289,9 @@ class window.DomTextMapper extends TextMapperCore
     if node is @pathStartNode
       # Yes, we have rescanned starting with the root node!
       @log "Ended up rescanning the whole doc."
+      delete @_ignorePos
       @collectPositions null, node, path, null, 0, 0
-      @_updateCorpus lengthDelta
+      @_updateCorpus()
     else
       # This was not the root path, so we must have a valid parent.
       parentPath = @_parentPath path
@@ -331,22 +332,22 @@ class window.DomTextMapper extends TextMapperCore
 
   # Update the corpus
   _updateCorpus: (lengthDelta) ->
-    @log "Recalculating corpus."
+#    @log "Recalculating corpus."
     if lengthDelta
-      #@log "(Length delta:", lengthDelta, ")"
+#      @log "(Length delta:", lengthDelta, ")"
     else
       lengthDelta = 0
 
     @_corpus = if @expectedContent?  # Do we have expected content?
-      @expectedContent               # There not much to calculate, then
-    else                             # No hard-wired result, let's calculate
+      @expectedContent               # Not much to calculate, then.
+    else                    # No hard-wired result, let's calculate
       unless @path["."]
         @log "We can't find info about root."
         throw new Error "Internal error"
       content = @path["."].content   # This is the base we are going to use
       if @_ignorePos?                # Is there stuff at the end to ignore?
         @_ignorePos += lengthDelta   # Update the ignore index
-        @log "Adjusted _ignorePos to", @_ignorePos
+#        @log "Adjusted _ignorePos to", @_ignorePos
         content[ ... @_ignorePos ]   # Return the wanted segment
       else                           # There is no ignore
         content                      # We are going to use the whole content
@@ -1067,7 +1068,7 @@ class window.DomTextMapper extends TextMapperCore
       pos = parentIndex + index  # Where were we?
       unless @_ignorePos? and @_ignorePos <= pos # Have we seen better ?
         @_ignorePos = pos
-        @log "Set _ignorePos to", pos, "because of", node
+#        @log "Set _ignorePos to", pos, "because of", node
       return index
 
     pathInfo = @path[path]

@@ -245,8 +245,9 @@
       this.traverseSubTree(node, path);
       if (node === this.pathStartNode) {
         this.log("Ended up rescanning the whole doc.");
+        delete this._ignorePos;
         this.collectPositions(null, node, path, null, 0, 0);
-        this._updateCorpus(lengthDelta);
+        this._updateCorpus();
       } else {
         parentPath = this._parentPath(path);
         parentPathInfo = this.path[parentPath];
@@ -266,7 +267,6 @@
 
     DomTextMapper.prototype._updateCorpus = function(lengthDelta) {
       var content;
-      this.log("Recalculating corpus.");
       if (lengthDelta) {
 
       } else {
@@ -283,7 +283,6 @@
           content = this.path["."].content;
           if (this._ignorePos != null) {
             this._ignorePos += lengthDelta;
-            this.log("Adjusted _ignorePos to", this._ignorePos);
             return content.slice(0, this._ignorePos);
           } else {
             return content;
@@ -959,7 +958,6 @@
         pos = parentIndex + index;
         if (!((this._ignorePos != null) && this._ignorePos <= pos)) {
           this._ignorePos = pos;
-          this.log("Set _ignorePos to", pos, "because of", node);
         }
         return index;
       }

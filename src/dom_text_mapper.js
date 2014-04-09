@@ -39,7 +39,7 @@
   })();
 
   window.DomTextMapper = (function(_super) {
-    var SELECT_CHILDREN_INSTEAD, USE_EMPTY_TEXT_WORKAROUND, USE_TABLE_TEXT_WORKAROUND, WHITESPACE;
+    var SELECT_CHILDREN_INSTEAD, USE_EMPTY_TEXT_WORKAROUND, USE_TABLE_TEXT_WORKAROUND, WATCHED_PATHS, WHITESPACE;
 
     __extends(DomTextMapper, _super);
 
@@ -52,6 +52,8 @@
     USE_EMPTY_TEXT_WORKAROUND = true;
 
     SELECT_CHILDREN_INSTEAD = ["table", "thead", "tbody", "tfoot", "ol", "a", "caption", "p", "span", "div", "h1", "h2", "h3", "h4", "h5", "h6", "ul", "li", "form"];
+
+    WATCHED_PATHS = ["./DIV[3]/DIV[5]/DIV[2]", "./DIV[3]/DIV[5]/DIV[2]/DIV[2]"];
 
     DomTextMapper.instances = 0;
 
@@ -72,7 +74,6 @@
         this.setRealRoot();
       }
       DomTextMapper.instances += 1;
-      this._calculations = 0;
     }
 
     DomTextMapper.prototype._createSyncAPI = function() {
@@ -120,7 +121,7 @@
     };
 
     DomTextMapper.prototype._startScan = function(reason) {
-      var node, path, startTime, t1, t2;
+      var info, maxLength, node, overspill, p, path, startTime, t1, t2, _ref;
       if (reason == null) {
         reason = "unknown reason";
       }
@@ -146,8 +147,20 @@
       this.log("Phase I (Path traversal) took " + (t1 - startTime) + " ms.");
       path = this.getPathTo(this.pathStartNode);
       node = this.path[path].node;
-      this.collectPositions(null, node, path, null, 0, 0);
+      this.collectPositions(node, path, null, 0, 0);
       this._corpus = this.getNodeContent(this.path[path].node, false);
+      maxLength = this._corpus.length;
+      _ref = this.path;
+      for (p in _ref) {
+        info = _ref[p];
+        if (!(!info.irrelevant && (info.end > maxLength))) {
+          continue;
+        }
+        overspill = info.end - maxLength;
+        info.length -= overspill;
+        info.content = info.content.substr(0, info.length);
+        info.end = maxLength;
+      }
       this.restoreSelection();
       t2 = this.timestamp();
       this.log("Phase II (offset calculation) took " + (t2 - t1) + " ms.");
@@ -171,12 +184,12 @@
     };
 
     DomTextMapper.prototype._performUpdateOnNode = function(node, reason) {
-      var calculation, content, corpusChanged, data, lengthDelta, oldContent, oldEnd, oldIndex, oldStart, p, parentNode, parentPath, parentPathInfo, path, pathInfo, pathsToDrop, predecessorInfo, prefix, startTime, _i, _len;
+      var content, corpusChanged, data, debug, lengthDelta, oldContent, oldEnd, oldIndex, oldStart, p, parentNode, parentPath, parentPathInfo, path, pathInfo, pathsToDrop, predecessorInfo, prefix, startTime, _i, _len;
       if (reason == null) {
         reason = "(no reason)";
       }
       if (!node) {
-        throw new Error("Called performUpdate with a null node!");
+        throw new Error("Internal error: Called performUpdate without a node!");
       }
       if (!this.path) {
         return;
@@ -184,6 +197,8 @@
       startTime = this.timestamp();
       path = this.getPathTo(node);
       pathInfo = this.path[path];
+      debug = __indexOf.call(WATCHED_PATHS, path) >= 0;
+      this.log("Performing update on node @", path);
       while (!pathInfo) {
         node = node.parentNode;
         path = this.getPathTo(node);
@@ -224,10 +239,8 @@
       }).call(this);
       if (corpusChanged) {
         pathsToDrop.push(path);
-        if (!pathInfo.irrelevant) {
-          oldStart = pathInfo.start;
-          oldEnd = pathInfo.end;
-        }
+        oldStart = pathInfo.start;
+        oldEnd = pathInfo.end;
       }
       for (_i = 0, _len = pathsToDrop.length; _i < _len; _i++) {
         p = pathsToDrop[_i];
@@ -235,52 +248,48 @@
       }
       if (corpusChanged) {
         if (node !== this.pathStartNode) {
-          calculation = this._getNewCalculationId();
-          this._alterAncestorsMappingData(node, pathInfo, oldStart, oldEnd, content, calculation);
-          if (oldStart != null) {
-            this._alterSiblingsMappingData(node, pathInfo, oldStart, oldEnd, content, calculation);
-          }
+          this._alterAncestorsMappingData(node, pathInfo, oldStart, oldEnd, content);
+          this._alterSiblingsMappingData(node, pathInfo, oldStart, oldEnd, content);
         }
+      }
+      if (node === this.pathStartNode) {
+        this.log("Dropping _ignorePos");
+        delete this._ignorePos;
       }
       this.traverseSubTree(node, path);
       if (node === this.pathStartNode) {
         this.log("Ended up rescanning the whole doc.");
-        delete this._ignorePos;
-        this.collectPositions(null, node, path, null, 0, 0);
+        this.collectPositions(node, path, null, 0, 0);
         this._updateCorpus();
       } else {
         parentPath = this._parentPath(path);
         parentPathInfo = this.path[parentPath];
         predecessorInfo = this._findRelevantPredecessor(node, parentPath);
         oldIndex = predecessorInfo == null ? 0 : predecessorInfo.end - parentPathInfo.start;
-        this.collectPositions(calculation, node, path, parentPathInfo.content, parentPathInfo.start, oldIndex);
+        this.collectPositions(node, path, parentPathInfo.content, parentPathInfo.start, oldIndex);
       }
-      if (corpusChanged && (node !== this.pathStartNode) && (oldStart == null)) {
-        pathInfo = this.path[path];
-        oldStart = oldEnd = pathInfo.start;
-        content = pathInfo.content;
-        this._alterSiblingsMappingData(node, pathInfo, oldStart, oldEnd, content, calculation);
-      }
+      this.log("Data update took " + (this.timestamp() - startTime) + " ms.");
       this.restoreSelection();
       return corpusChanged;
     };
 
     DomTextMapper.prototype._updateCorpus = function(lengthDelta) {
-      var content;
+      var content, info, maxLength, overspill, p, path, _ref;
       if (lengthDelta) {
 
       } else {
         lengthDelta = 0;
       }
-      return this._corpus = (function() {
+      this._corpus = (function() {
         if (this.expectedContent != null) {
           return this.expectedContent;
         } else {
-          if (!this.path["."]) {
+          path = this.getDefaultPath();
+          if (!this.path[path]) {
             this.log("We can't find info about root.");
             throw new Error("Internal error");
           }
-          content = this.path["."].content;
+          content = this.path[path].content;
           if (this._ignorePos != null) {
             this._ignorePos += lengthDelta;
             return content.slice(0, this._ignorePos);
@@ -289,11 +298,27 @@
           }
         }
       }).call(this);
+      maxLength = this._corpus.length;
+      _ref = this.path;
+      for (p in _ref) {
+        info = _ref[p];
+        if (!(!info.irrelevant && (info.end > maxLength))) {
+          continue;
+        }
+        overspill = info.end - maxLength;
+        info.length -= overspill;
+        info.content = info.content.substr(0, info.length);
+        info.end = maxLength;
+      }
+      return this._corpus;
     };
 
-    DomTextMapper.prototype._alterAncestorsMappingData = function(node, nPathInfo, oldStart, oldEnd, newContent, calculationId) {
-      var debug, lengthDelta, oldLength, oldPart, opEnd, opStart, pContent, pEnd, pStart, parentPath, parentPathInfo, prefix, suffix;
-      oldLength = oldStart != null ? oldEnd - oldStart : 0;
+    DomTextMapper.prototype._alterAncestorsMappingData = function(node, nPathInfo, oldStart, oldEnd, newContent) {
+      var debug, lengthDelta, oldLength, oldPart, opEnd, opStart, pContent, pEnd, pStart, parentPath, parentPathInfo, prefix, suffix, _ref;
+      if (oldStart == null) {
+        throw new Error("Internal error: oldStart is missing");
+      }
+      oldLength = oldEnd - oldStart;
       lengthDelta = newContent.length - oldLength;
       if (isNaN(lengthDelta)) {
         throw new Error("Internal error: got a NaN");
@@ -303,93 +328,60 @@
         return;
       }
       parentPath = this._parentPath(nPathInfo.path);
-      debug = false;
-      parentPathInfo = this.path[parentPath];
-      if (parentPathInfo.irrelevant) {
-        this.log("WARNING: irrelevant ancestors are not supposed to be present here.", "Expect trouble.");
+      debug = (_ref = nPathInfo.path, __indexOf.call(WATCHED_PATHS, _ref) >= 0) || (__indexOf.call(WATCHED_PATHS, parentPath) >= 0);
+      if (debug) {
+        console.log("ancestor update in debug mode");
       }
+      parentPathInfo = this.path[parentPath];
       if (parentPathInfo.irrelevant) {
         throw new Error("Internal error: we should never launch an update " + "from a child of an irrelevant node.");
       }
-      if (oldStart != null) {
-        if (oldStart < parentPathInfo.start) {
-          throw new Error("Internal error: child's alleged old start (" + oldStart + ") is before the parent's start (" + parentPathInfo.start + ")!");
-        }
-        if (oldEnd > parentPathInfo.end) {
-          throw new Error("Internal error: child's alleged old end (" + oldEnd + ") is beyond the parent's end (" + parentPathInfo.end + ")!");
-        }
-        opStart = parentPathInfo.start;
-        opEnd = parentPathInfo.end;
-        pStart = oldStart - opStart;
-        pEnd = oldEnd - opStart;
-        if (pEnd > parentPathInfo.length) {
-          throw new Error("Internal error: segment is supposed be at [" + pStart + "..." + pEnd + "], but parent's content is only " + parentPathInfo.length + " chars long!");
-        }
-        pContent = parentPathInfo.content;
-        prefix = pContent.slice(0, pStart);
-        oldPart = pContent.slice(pStart, pEnd);
-        if (oldPart.length !== oldEnd - oldStart) {
-          throw new Error("Internal error: oldPart's real length is " + oldPart.length + ", but oldEnd-oldStart is " + (oldEnd - oldStart));
-        }
-        suffix = pContent.slice(pEnd);
-        parentPathInfo.content = pContent = prefix + newContent + suffix;
-        parentPathInfo.length += lengthDelta;
-        parentPathInfo.calculatedAt = calculationId;
-        if (parentPathInfo.content.length !== parentPathInfo.length) {
-          throw new Error("Internal error: length mismatch!");
-        }
-        if (parentPath === "." && parentPathInfo.length < 80) {
-          throw new Error("Internal error: root length botched!");
-        }
-        if (parentPathInfo.length) {
-          parentPathInfo.end += lengthDelta;
-          if (isNaN(parentPathInfo.end)) {
-            throw new Error("Internal error: got a NaN");
-          }
-        } else {
-          if (!parentPathInfo.irrelevant) {
-            this._markNodeAsIrrelevant(parentPathInfo.node, parentPath);
-          }
-          delete parentPathInfo.start;
-          delete parentPathInfo.end;
-        }
-        if (debug) {
-          this.log("Ancestor-updated (1) @", parentPath, ". Pos is [", parentPathInfo.start, "...", parentPathInfo.end, "]");
-        }
-        return this._alterAncestorsMappingData(parentPathInfo.node, parentPathInfo, oldStart, oldEnd, newContent);
-      } else {
-        parentPathInfo.content = pContent = this.getNodeContent(parentPathInfo.node, false);
-        parentPathInfo.length = pContent.length;
-        parentPathInfo.calculatedAt = calculationId;
-        if (parentPathInfo.length) {
-          parentPathInfo.end = parentPathInfo.start + parentPathInfo.length;
-          if (isNaN(parentPathInfo.end)) {
-            throw new Error("Internal error: got a NaN");
-          }
-          if (debug) {
-            this.log("Ancestor-updated (2) @", parentPath, ". Pos is [", parentPathInfo.start, "...", parentPathInfo.end, "]");
-          }
-          return this._alterAncestorsMappingData(parentPathInfo.node, parentPathInfo, parentPathInfo.start, parentPathInfo.start, pContent);
-        } else {
-          opStart = parentPathInfo.start;
-          opEnd = parentPathInfo.end;
-          if (!parentPathInfo.irrelevant) {
-            this._markNodeAsIrrelevant(parentPathInfo.node, parentPath);
-          }
-          delete parentPathInfo.start;
-          delete parentPathInfo.end;
-          if (debug) {
-            this.log("Ancestor-updated (2) @", parentPath, ". Now it's irrelevant.");
-          }
-          return this._alterAncestorsMappingData(parentPathInfo.node, parentPathInfo, opStart, opEnd, "");
-        }
+      if (oldStart < parentPathInfo.start) {
+        throw new Error("Internal error: child's alleged old start (" + oldStart + ") is before the parent's start (" + parentPathInfo.start + ")!");
       }
+      if (oldEnd > parentPathInfo.end) {
+        throw new Error("Internal error: child's alleged old end (" + oldEnd + ") is beyond the parent's end (" + parentPathInfo.end + ")!");
+      }
+      opStart = parentPathInfo.start;
+      opEnd = parentPathInfo.end;
+      pStart = oldStart - opStart;
+      pEnd = oldEnd - opStart;
+      if (pEnd > parentPathInfo.length) {
+        throw new Error("Internal error: segment is supposed be at [" + pStart + "..." + pEnd + "], but parent's content is only " + parentPathInfo.length + " chars long!");
+      }
+      pContent = parentPathInfo.content;
+      prefix = pContent.slice(0, pStart);
+      oldPart = pContent.slice(pStart, pEnd);
+      if (oldPart.length !== oldEnd - oldStart) {
+        throw new Error("Internal error: oldPart's real length is " + oldPart.length + ", but oldEnd-oldStart is " + (oldEnd - oldStart));
+      }
+      suffix = pContent.slice(pEnd);
+      parentPathInfo.content = pContent = prefix + newContent + suffix;
+      parentPathInfo.length += lengthDelta;
+      if (parentPathInfo.content.length !== parentPathInfo.length) {
+        throw new Error("Internal error: length mismatch!");
+      }
+      if (parentPath === "." && parentPathInfo.length < 80) {
+        throw new Error("Internal error: root length botched!");
+      }
+      if (parentPathInfo.length) {
+        parentPathInfo.end += lengthDelta;
+        if (isNaN(parentPathInfo.end)) {
+          throw new Error("Internal error: got a NaN");
+        }
+      } else {
+        this._markNodeAsIrrelevant(parentPathInfo.node, parentPath, parentPathnfo.start);
+      }
+      if (debug) {
+        this.log("Ancestor-updated (1) @", parentPath, ". Pos is [", parentPathInfo.start, "...", parentPathInfo.end, "]");
+      }
+      return this._alterAncestorsMappingData(parentPathInfo.node, parentPathInfo, oldStart, oldEnd, newContent);
     };
 
-    DomTextMapper.prototype._alterSiblingsMappingData = function(node, pathInfo, oldStart, oldEnd, newContent, calculationId) {
+    DomTextMapper.prototype._alterSiblingsMappingData = function(node, pathInfo, oldStart, oldEnd, newContent) {
       var debug, delta, info, p, _ref, _results;
-      if (calculationId == null) {
-        calculationId = NaN;
+      if (oldStart == null) {
+        throw new Error("Internal error: oldStart is missing!");
       }
       delta = newContent.length - (oldEnd - oldStart);
       if (!delta) {
@@ -399,22 +391,20 @@
       _results = [];
       for (p in _ref) {
         info = _ref[p];
-        if (!((!info.irrelevant) && info.calculatedAt !== calculationId && info.start >= oldEnd)) {
+        if (!((!info.irrelevant) && info.start >= oldEnd)) {
           continue;
         }
-        debug = false;
+        debug = __indexOf.call(WATCHED_PATHS, p) >= 0;
         if (debug) {
           this.log("Starting at", info.start, "; threshold is", oldEnd);
         }
         info.start += delta;
         info.end += delta;
-        info.calculatedAt = calculationId;
         if (isNaN(info.end)) {
           throw new Error("Internal error: got a NaN");
         }
         if (debug) {
-          this.log("Sibling-updated @", p, ". Pos is [", info.start, "...", info.end, "]");
-          _results.push(this.log("(This data was calculated at round #", info.calculatedAt, "; current round is #", calculationId, ")"));
+          _results.push(this.log("Sibling-updated @", p, ". Pos is [", info.start, "...", info.end, "]"));
         } else {
           _results.push(void 0);
         }
@@ -702,7 +692,7 @@
       if (verbose == null) {
         verbose = false;
       }
-      debug = false;
+      debug = __indexOf.call(WATCHED_PATHS, path) >= 0;
       if (debug) {
         this.log("Traversing path", path);
       }
@@ -859,7 +849,6 @@
 
     DomTextMapper.prototype.computeSourcePositions = function(match) {
       var dc, displayEnd, displayIndex, displayStart, displayText, sc, sourceEnd, sourceIndex, sourceStart, sourceText;
-      this.log("In computeSourcePosition", match.element.path, match.element.node.data);
       sourceText = match.element.node.data.replace(/\n/g, " ");
       displayText = match.element.content;
       if (displayText.length > sourceText.length) {
@@ -908,29 +897,30 @@
       return content;
     };
 
-    DomTextMapper.prototype._markNodeAsIrrelevant = function(node, path, verbose) {
+    DomTextMapper.prototype._markNodeAsIrrelevant = function(node, path, pos, verbose) {
       var info, item, _i, _len, _ref, _results;
+      if (isNaN(pos)) {
+        throw new Error("Internal error: got a NaN");
+      }
       if (verbose) {
         this.log("Marking node @", path, "as irrelevant.");
       }
       info = this.path[path];
       if (info) {
+        info.atomic = false;
         info.irrelevant = true;
+        info.end = info.start = pos;
         _ref = this._enumerateChildren(node, path, verbose);
         _results = [];
         for (_i = 0, _len = _ref.length; _i < _len; _i++) {
           item = _ref[_i];
-          _results.push(this._markNodeAsIrrelevant(item.node, item.path, verbose));
+          _results.push(this._markNodeAsIrrelevant(item.node, item.path, pos, verbose));
         }
         return _results;
       }
     };
 
-    DomTextMapper.prototype._getNewCalculationId = function() {
-      return this._calculations++;
-    };
-
-    DomTextMapper.prototype.collectPositions = function(calculationId, node, path, parentContent, parentIndex, index) {
+    DomTextMapper.prototype.collectPositions = function(node, path, parentContent, parentIndex, index) {
       var atomic, content, debug, endIndex, item, pathInfo, pos, startIndex, _i, _len, _ref;
       if (parentContent == null) {
         parentContent = null;
@@ -941,13 +931,10 @@
       if (index == null) {
         index = 0;
       }
-      if (calculationId == null) {
-        calculationId = this._getNewCalculationId();
-      }
       if (isNaN(parentIndex)) {
         throw new Error("Internal error: got a NaN");
       }
-      debug = false;
+      debug = __indexOf.call(WATCHED_PATHS, path) >= 0;
       if (debug) {
         this.log("Post-processing path ", path);
       }
@@ -958,23 +945,17 @@
         pos = parentIndex + index;
         if (!((this._ignorePos != null) && this._ignorePos <= pos)) {
           this._ignorePos = pos;
+          this.log("Set _ignorePos to", pos, "because of", node);
         }
         return index;
       }
       pathInfo = this.path[path];
-      pathInfo.calculatedAt = calculationId;
       content = pathInfo != null ? pathInfo.content : void 0;
       if (!content) {
-        pathInfo.start = parentIndex + index;
-        pathInfo.end = parentIndex + index;
-        if (isNaN(pathInfo.end)) {
-          throw new Error("Internal error: got a NaN");
-        }
-        pathInfo.atomic = false;
         if (debug) {
           this.log("Path", path, "is empty; setting it to irrelevant.");
         }
-        this._markNodeAsIrrelevant(node, path, debug);
+        this._markNodeAsIrrelevant(node, path, parentIndex + index, debug);
         return index;
       }
       startIndex = parentContent != null ? parentContent.indexOf(content, index) : index;
@@ -996,7 +977,7 @@
         _ref = this._enumerateChildren(node, path);
         for (_i = 0, _len = _ref.length; _i < _len; _i++) {
           item = _ref[_i];
-          pos = this.collectPositions(calculationId, item.node, item.path, content, parentIndex + startIndex, pos);
+          pos = this.collectPositions(item.node, item.path, content, parentIndex + startIndex, pos);
         }
       }
       return endIndex;
@@ -1051,7 +1032,7 @@
           this.log("X=*=*=X Stored and corpus content matches at", path);
         } else {
           diff = this.dmp.compare(info.content, inCorpus);
-          this.log("X=*=*=X Mismatch between stored content and corpus[", info.start, "...", info.end, "] at", path, diff.diff);
+          this.log("X=*=*=X Mismatch between stored content and corpus [", info.start, "...", info.end, "] at", path, diff.diff);
         }
         if (ok2) {
           this.log("X=*=*=X Stored and actual content matches at", path);
@@ -1070,16 +1051,15 @@
     };
 
     DomTextMapper.prototype._testAllMappings = function(verbose) {
-      var correct, i, info, p, path, _ref, _ref1;
+      var correct, info, p, path, _ref, _ref1;
       if (verbose == null) {
         verbose = false;
       }
-      this.log("Verifying map info: was it all properly traversed & post-processed?");
       correct = true;
       _ref = this.path;
-      for (i in _ref) {
-        p = _ref[i];
-        if (!(p.irrelevant || (p.atomic != null))) {
+      for (p in _ref) {
+        info = _ref[p];
+        if (!((info.atomic != null) && (info.start != null))) {
           if (verbose || correct) {
             this.log(i, "is missing data.");
           }
@@ -1089,7 +1069,6 @@
       if (!correct) {
         return false;
       }
-      this.log("Verifying map info: do nodes match?");
       _ref1 = this.path;
       for (path in _ref1) {
         info = _ref1[path];
@@ -1159,7 +1138,7 @@
         container = _ref[_i];
         if (container.contains(node)) {
           if (debug) {
-            this.log("Node", node, "is ignore, because it's a descendant of", containter);
+            this.log("Node", node, "is ignore, because it's a descendant of", container);
           }
           return true;
         }

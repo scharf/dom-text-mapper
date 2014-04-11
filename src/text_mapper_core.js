@@ -8,8 +8,8 @@
 
     CONTEXT_LEN = 32;
 
-    function TextMapperCore(id) {
-      this.id = id != null ? id : "some mapper";
+    function TextMapperCore(_id) {
+      this._id = _id != null ? _id : "some mapper";
       this._getMappingsForCharRanges = __bind(this._getMappingsForCharRanges, this);
       this._getContextForCharRange = __bind(this._getContextForCharRange, this);
       this._createSyncAPI();
@@ -33,7 +33,7 @@
       };
     };
 
-    TextMapperCore.prototype.timestamp = function() {
+    TextMapperCore.prototype._timestamp = function() {
       return new Date().getTime();
     };
 
@@ -100,10 +100,10 @@
       throw new Error("not implemented");
     };
 
-    TextMapperCore.prototype.log = function() {
+    TextMapperCore.prototype._log = function() {
       var msg;
       msg = 1 <= arguments.length ? __slice.call(arguments, 0) : [];
-      return console.log.apply(console, [this.id, ":"].concat(__slice.call(msg)));
+      return console.log.apply(console, [this._id, ":"].concat(__slice.call(msg)));
     };
 
     return TextMapperCore;

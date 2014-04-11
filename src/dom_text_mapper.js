@@ -24,17 +24,17 @@
 
     DomTextMapper.instances = 0;
 
-    function DomTextMapper(options) {
+    function DomTextMapper(_options) {
       var _ref;
-      this.options = options != null ? options : {};
+      this._options = _options != null ? _options : {};
       this._onMutation = __bind(this._onMutation, this);
       this._getEndInfoForNode = __bind(this._getEndInfoForNode, this);
       this._getStartInfoForNode = __bind(this._getStartInfoForNode, this);
       this._startScan = __bind(this._startScan, this);
       this._getMappingsForCharRange = __bind(this._getMappingsForCharRange, this);
-      DomTextMapper.__super__.constructor.call(this, (_ref = this.options.id) != null ? _ref : "d-t-m #" + DomTextMapper.instances);
-      if (this.options.rootNode != null) {
-        this.setRootNode(this.options.rootNode);
+      DomTextMapper.__super__.constructor.call(this, (_ref = this._options.id) != null ? _ref : "d-t-m #" + DomTextMapper.instances);
+      if (this._options.rootNode != null) {
+        this.setRootNode(this._options.rootNode);
       } else {
         this.setRealRoot();
       }
@@ -42,8 +42,8 @@
     }
 
     DomTextMapper.prototype.setRootNode = function(rootNode) {
-      this.rootWin = window;
-      return this.pathStartNode = this._changeRootNode(rootNode);
+      this._rootWin = window;
+      return this._pathStartNode = this._changeRootNode(rootNode);
     };
 
     DomTextMapper.prototype.setRootId = function(rootId) {
@@ -56,31 +56,31 @@
       if (iframe == null) {
         throw new Error("Can't find iframe with specified ID!");
       }
-      this.rootWin = iframe.contentWindow;
-      if (this.rootWin == null) {
+      this._rootWin = iframe.contentWindow;
+      if (this._rootWin == null) {
         throw new Error("Can't access contents of the specified iframe!");
       }
-      this._changeRootNode(this.rootWin.document);
-      return this.pathStartNode = this.getBody();
+      this._changeRootNode(this._rootWin.document);
+      return this._pathStartNode = this._getBody();
     };
 
     DomTextMapper.prototype.setRealRoot = function() {
-      this.rootWin = window;
+      this._rootWin = window;
       this._changeRootNode(document);
-      return this.pathStartNode = this.getBody();
+      return this._pathStartNode = this._getBody();
     };
 
     DomTextMapper.prototype.setExpectedContent = function(content) {
       return this.expectedContent = content;
     };
 
-    DomTextMapper.prototype.selectPath = function(path, scroll) {
+    DomTextMapper.prototype._selectPath = function(path, scroll) {
       var node;
       if (scroll == null) {
         scroll = false;
       }
-      node = this.lookUpNode(path);
-      return this.selectNode(node, scroll);
+      node = this._lookUpNode(path);
+      return this._selectNode(node, scroll);
     };
 
     DomTextMapper.prototype._getMappingsForCharRange = function(start, end) {
@@ -153,18 +153,18 @@
                   mapping.end = end - info.start;
                   mapping.wanted = info.content.substr(mapping.start, mapping.end - mapping.start);
                 }
-                _this.computeSourcePositions(mapping);
+                _this._computeSourcePositions(mapping);
                 mapping.yields = info.node.data.substr(mapping.startCorrected, mapping.endCorrected - mapping.startCorrected);
               } else if ((info.node.nodeType === Node.ELEMENT_NODE) && (info.node.tagName.toLowerCase() === "img")) {
-                _this.log("Can not select a sub-string from the title of an image. Selecting all.");
+                _this._log("Can not select a sub-string from the title of an image. Selecting all.");
                 mapping.full = true;
                 mapping.wanted = info.content;
               } else {
-                _this.log("Warning: no idea how to handle partial mappings for node type " + info.node.nodeType);
+                _this._log("Warning: no idea how to handle partial mappings for node type " + info.node.nodeType);
                 if (info.node.tagName != null) {
-                  _this.log("Tag: " + info.node.tagName);
+                  _this._log("Tag: " + info.node.tagName);
                 }
-                _this.log("Selecting all.");
+                _this._log("Selecting all.");
                 mapping.full = true;
                 mapping.wanted = info.content;
               }
@@ -174,14 +174,14 @@
         }
       }
       if (mappings.length === 0) {
-        this.log("Collecting nodes for [" + start + ":" + end + "]");
-        this.log("Should be: '" + this._corpus.slice(start, end) + "'.");
+        this._log("Collecting nodes for [" + start + ":" + end + "]");
+        this._log("Should be: '" + this._corpus.slice(start, end) + "'.");
         throw new Error("No mappings found for [" + start + ":" + end + "]!");
       }
       mappings = mappings.sort(function(a, b) {
         return a.element.start - b.element.start;
       });
-      r = this.rootWin.document.createRange();
+      r = this._rootWin.document.createRange();
       startMapping = mappings[0];
       startNode = startMapping.element.node;
       startPath = startMapping.element.path = this._getPathTo(startNode);
@@ -247,7 +247,7 @@
       if (intermittent == null) {
         intermittent = false;
       }
-      newCorpus = this._getNodeContent(this.pathStartNode, shouldRestoreSelection);
+      newCorpus = this._getNodeContent(this._pathStartNode, shouldRestoreSelection);
       if (intermittent) {
         return newCorpus;
       }
@@ -391,7 +391,7 @@
         results = [];
       }
       if (node == null) {
-        node = this.pathStartNode;
+        node = this._pathStartNode;
       }
       switch (node.nodeType) {
         case Node.TEXT_NODE:
@@ -407,7 +407,7 @@
           }
           break;
         default:
-          this.log("Ignoring node type", node.nodeType);
+          this._log("Ignoring node type", node.nodeType);
       }
       return results;
     };
@@ -457,45 +457,45 @@
         throw new Error("Called getPathTo with null node!");
       }
       xpath = '';
-      while (node !== this.rootNode) {
+      while (node !== this._rootNode) {
         if (node == null) {
-          this.log("Root node:", this.rootNode);
-          this.log("Wanted node:", origNode);
-          this.log("Is this even a child?", this.rootNode.contains(origNode));
+          this._log("Root node:", this._rootNode);
+          this._log("Wanted node:", origNode);
+          this._log("Is this even a child?", this._rootNode.contains(origNode));
           throw new Error("Called getPathTo on a node which was not a descendant of the configured root node.");
         }
         xpath = (this._getPathSegment(node)) + '/' + xpath;
         node = node.parentNode;
       }
-      xpath = (this.rootNode.ownerDocument != null ? './' : '/') + xpath;
+      xpath = (this._rootNode.ownerDocument != null ? './' : '/') + xpath;
       xpath = xpath.replace(/\/$/, '');
       return xpath;
     };
 
-    DomTextMapper.prototype.getBody = function() {
-      return (this.rootWin.document.getElementsByTagName("body"))[0];
+    DomTextMapper.prototype._getBody = function() {
+      return (this._rootWin.document.getElementsByTagName("body"))[0];
     };
 
     DomTextMapper.prototype._regions_overlap = function(start1, end1, start2, end2) {
       return start1 < end2 && start2 < end1;
     };
 
-    DomTextMapper.prototype.lookUpNode = function(path) {
+    DomTextMapper.prototype._lookUpNode = function(path) {
       var doc, node, results, _ref;
-      doc = (_ref = this.rootNode.ownerDocument) != null ? _ref : this.rootNode;
-      results = doc.evaluate(path, this.rootNode, null, 0, null);
+      doc = (_ref = this._rootNode.ownerDocument) != null ? _ref : this._rootNode;
+      results = doc.evaluate(path, this._rootNode, null, 0, null);
       return node = results.iterateNext();
     };
 
     DomTextMapper.prototype._saveSelection = function() {
       var i, r, sel;
-      if (this.savedSelection != null) {
-        this.log("Selection saved at:");
-        this.log(this.selectionSaved);
+      if (this._savedSelection != null) {
+        this._log("Selection saved at:");
+        this._log(this._selectionSaved);
         throw new Error("Selection already saved!");
       }
-      sel = this.rootWin.getSelection();
-      this.savedSelection = (function() {
+      sel = this._rootWin.getSelection();
+      this._savedSelection = (function() {
         var _i, _ref, _results;
         _results = [];
         for (i = _i = 0, _ref = sel.rangeCount; 0 <= _ref ? _i < _ref : _i > _ref; i = 0 <= _ref ? ++_i : --_i) {
@@ -507,26 +507,26 @@
         }
         return _results;
       })();
-      return this.selectionSaved = (new Error("selection was saved here")).stack;
+      return this._selectionSaved = (new Error("selection was saved here")).stack;
     };
 
     DomTextMapper.prototype._restoreSelection = function() {
       var r, sel, _i, _len, _ref;
-      if (this.savedSelection == null) {
+      if (this._savedSelection == null) {
         throw new Error("No selection to restore.");
       }
-      sel = this.rootWin.getSelection();
+      sel = this._rootWin.getSelection();
       sel.removeAllRanges();
-      _ref = this.savedSelection;
+      _ref = this._savedSelection;
       for (_i = 0, _len = _ref.length; _i < _len; _i++) {
         r = _ref[_i];
         r.range.setEnd(r.range.endContainer, r.endOffset);
         sel.addRange(r.range);
       }
-      return delete this.savedSelection;
+      return delete this._savedSelection;
     };
 
-    DomTextMapper.prototype.selectNode = function(node, scroll) {
+    DomTextMapper.prototype._selectNode = function(node, scroll) {
       var children, exception, realRange, sel, sn, _ref;
       if (scroll == null) {
         scroll = false;
@@ -534,16 +534,16 @@
       if (node == null) {
         throw new Error("Called selectNode with null node!");
       }
-      sel = this.rootWin.getSelection();
+      sel = this._rootWin.getSelection();
       sel.removeAllRanges();
-      realRange = this.rootWin.document.createRange();
+      realRange = this._rootWin.document.createRange();
       if (node.nodeType === Node.ELEMENT_NODE && node.hasChildNodes() && (_ref = node.tagName.toLowerCase(), __indexOf.call(SELECT_CHILDREN_INSTEAD, _ref) >= 0)) {
         children = node.childNodes;
         realRange.setStartBefore(children[0]);
         realRange.setEndAfter(children[children.length - 1]);
         sel.addRange(realRange);
       } else {
-        if (USE_TABLE_TEXT_WORKAROUND && node.nodeType === Node.TEXT_NODE && this.isWhitespace(node)) {
+        if (USE_TABLE_TEXT_WORKAROUND && node.nodeType === Node.TEXT_NODE && this._isWhitespace(node)) {
 
         } else {
           try {
@@ -552,10 +552,10 @@
             sel.addRange(realRange);
           } catch (_error) {
             exception = _error;
-            if (!(USE_EMPTY_TEXT_WORKAROUND && this.isWhitespace(node))) {
-              this.log("Warning: failed to scan element @ " + this.underTraverse);
-              this.log("Content is: " + node.innerHTML);
-              this.log("We won't be able to properly anchor to any text inside this element.");
+            if (!(USE_EMPTY_TEXT_WORKAROUND && this._isWhitespace(node))) {
+              this._log("Warning: failed to scan element @ " + this.underTraverse);
+              this._log("Content is: " + node.innerHTML);
+              this._log("We won't be able to properly anchor to any text inside this element.");
             }
           }
         }
@@ -568,14 +568,14 @@
         if (sn != null) {
           sn.scrollIntoViewIfNeeded();
         } else {
-          this.log("Failed to scroll to element. (Browser does not support scrollIntoViewIfNeeded?)");
+          this._log("Failed to scroll to element. (Browser does not support scrollIntoViewIfNeeded?)");
         }
       }
       return sel;
     };
 
-    DomTextMapper.prototype.readSelectionText = function(sel) {
-      sel || (sel = this.rootWin.getSelection());
+    DomTextMapper.prototype._readSelectionText = function(sel) {
+      sel || (sel = this._rootWin.getSelection());
       return sel.toString().trim().replace(/\n/g, " ").replace(/\s{2,}/g, " ");
     };
 
@@ -587,15 +587,15 @@
       if (shouldRestoreSelection) {
         this._saveSelection();
       }
-      sel = this.selectNode(node);
-      text = this.readSelectionText(sel);
+      sel = this._selectNode(node);
+      text = this._readSelectionText(sel);
       if (shouldRestoreSelection) {
         this._restoreSelection();
       }
       return text;
     };
 
-    DomTextMapper.prototype.computeSourcePositions = function(match) {
+    DomTextMapper.prototype._computeSourcePositions = function(match) {
       var dc, displayEnd, displayIndex, displayStart, displayText, sc, sourceEnd, sourceIndex, sourceStart, sourceText;
       sourceText = match.element.node.data.replace(/\n/g, " ");
       displayText = match.element.content;
@@ -634,7 +634,7 @@
       if (shouldRestoreSelection == null) {
         shouldRestoreSelection = true;
       }
-      if ((node === this.pathStartNode) && (this.expectedContent != null)) {
+      if ((node === this._pathStartNode) && (this.expectedContent != null)) {
         return this.expectedContent;
       }
       return this._getNodeSelectionText(node, shouldRestoreSelection);
@@ -642,7 +642,7 @@
 
     WHITESPACE = /^\s*$/;
 
-    DomTextMapper.prototype.isWhitespace = function(node) {
+    DomTextMapper.prototype._isWhitespace = function(node) {
       var child, mightBeEmpty, result;
       result = (function() {
         var _i, _len, _ref;
@@ -654,7 +654,7 @@
             _ref = node.childNodes;
             for (_i = 0, _len = _ref.length; _i < _len; _i++) {
               child = _ref[_i];
-              mightBeEmpty = mightBeEmpty && this.isWhitespace(child);
+              mightBeEmpty = mightBeEmpty && this._isWhitespace(child);
             }
             return mightBeEmpty;
           default:
@@ -673,7 +673,7 @@
     };
 
     DomTextMapper.prototype.getPageRoot = function() {
-      return this.rootNode;
+      return this._rootNode;
     };
 
     DomTextMapper.prototype._getPageIndexForPos = function() {
@@ -685,11 +685,11 @@
     };
 
     DomTextMapper.prototype._getIgnoredParts = function() {
-      if (this.options.getIgnoredParts) {
-        if (this._ignoredParts && this.options.cacheIgnoredParts) {
+      if (this._options.getIgnoredParts) {
+        if (this._ignoredParts && this._options.cacheIgnoredParts) {
           return this._ignoredParts;
         } else {
-          return this._ignoredParts = this.options.getIgnoredParts();
+          return this._ignoredParts = this._options.getIgnoredParts();
         }
       } else {
         return [];
@@ -709,9 +709,9 @@
       if (debug == null) {
         debug = false;
       }
-      if (!this.pathStartNode.contains(node)) {
+      if (!this._pathStartNode.contains(node)) {
         if (debug) {
-          this.log("Node", node, "is ignored, because it's not a descendant of", this.pathStartNode, ".");
+          this._log("Node", node, "is ignored, because it's not a descendant of", this._pathStartNode, ".");
         }
         return true;
       }
@@ -720,7 +720,7 @@
         container = _ref[_i];
         if (container.contains(node)) {
           if (debug) {
-            this.log("Node", node, "is ignore, because it's a descendant of", container);
+            this._log("Node", node, "is ignore, because it's a descendant of", container);
           }
           return true;
         }
@@ -728,13 +728,13 @@
       if (ignoreIrrelevant) {
         if (this._isIrrelevant(node)) {
           if (debug) {
-            this.log("Node", node, "is ignored, because it's irrelevant.");
+            this._log("Node", node, "is ignored, because it's irrelevant.");
           }
           return true;
         }
       }
       if (debug) {
-        this.log("Node", node, "is NOT ignored.");
+        this._log("Node", node, "is NOT ignored.");
       }
       return false;
     };
@@ -763,7 +763,7 @@
 
     DomTextMapper.prototype._findFirstIgnoredPosition = function() {
       this._saveSelection();
-      this._ignorePos = this._findFirstIgnoredPositionInNode(this.pathStartNode);
+      this._ignorePos = this._findFirstIgnoredPositionInNode(this._pathStartNode);
       this._restoreSelection();
       delete this._dirty;
       return this._ignorePos;
@@ -786,7 +786,7 @@
           var event;
           event = document.createEvent("UIEvents");
           event.initUIEvent("corpusChange", true, false, window, 0);
-          return _this.rootNode.dispatchEvent(event);
+          return _this._rootNode.dispatchEvent(event);
         });
       }
     };
@@ -805,7 +805,7 @@
           }
         ]
       });
-      return this.rootNode = node;
+      return this._rootNode = node;
     };
 
     return DomTextMapper;

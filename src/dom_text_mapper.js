@@ -71,7 +71,7 @@
     };
 
     DomTextMapper.prototype.setExpectedContent = function(content) {
-      return this.expectedContent = content;
+      return this._expectedContent = content;
     };
 
     DomTextMapper.prototype._selectPath = function(path, scroll) {
@@ -631,13 +631,16 @@
     };
 
     DomTextMapper.prototype._getNodeContent = function(node, shouldRestoreSelection) {
+      var content;
       if (shouldRestoreSelection == null) {
         shouldRestoreSelection = true;
       }
-      if ((node === this._pathStartNode) && (this.expectedContent != null)) {
-        return this.expectedContent;
+      content = this._getNodeSelectionText(node, shouldRestoreSelection);
+      if ((node === this._pathStartNode) && (this._expectedContent != null)) {
+        this._log("I should find out how to make actual content fit the expectations");
+        content = this._expectedContent;
       }
-      return this._getNodeSelectionText(node, shouldRestoreSelection);
+      return content;
     };
 
     WHITESPACE = /^\s*$/;

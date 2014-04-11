@@ -12,7 +12,7 @@
       return (_ref = typeof PDFView !== "undefined" && PDFView !== null ? PDFView.initialized : void 0) != null ? _ref : false;
     };
 
-    PDFTextMapper.prototype.requiresSmartStringPadding = true;
+    PDFTextMapper.prototype._requiresSmartStringPadding = true;
 
     PDFTextMapper.prototype.getPageCount = function() {
       return PDFView.pages.length;
@@ -31,21 +31,21 @@
       return (_ref = PDFView.pages[index]) != null ? (_ref1 = _ref.textLayer) != null ? _ref1.renderingDone : void 0 : void 0;
     };
 
-    PDFTextMapper.prototype.getRootNodeForPage = function(index) {
+    PDFTextMapper.prototype.getPageRoot = function(index) {
       return PDFView.pages[index].textLayer.textLayerDiv;
     };
 
     function PDFTextMapper() {
       this._parseExtractedText = __bind(this._parseExtractedText, this);
-      this.setEvents();
+      this._setEvents();
       PDFTextMapper.__super__.constructor.apply(this, arguments);
     }
 
-    PDFTextMapper.prototype.setEvents = function() {
+    PDFTextMapper.prototype._setEvents = function() {
       var _this = this;
       addEventListener("pagerender", function(evt) {
         var index;
-        if (_this.pageInfo == null) {
+        if (_this._pageInfo == null) {
           return;
         }
         index = evt.detail.pageNumber - 1;
@@ -56,7 +56,7 @@
         node = evt.target;
         if (node.nodeType === Node.ELEMENT_NODE && node.nodeName.toLowerCase() === "div" && node.className === "textLayer") {
           index = parseInt(node.parentNode.id.substr(13) - 1);
-          return _this._unmapPage(_this.pageInfo[index]);
+          return _this._unmapPage(_this._pageInfo[index]);
         }
       });
       return $(PDFView.container).on('scroll', function() {
@@ -67,7 +67,7 @@
     PDFTextMapper.prototype._extractionPattern = /[ ]+/g;
 
     PDFTextMapper.prototype._parseExtractedText = function(text) {
-      return text.replace(this._extractionPattern, " ");
+      return text.replace(this._extractionPattern, " ").trim();
     };
 
     PDFTextMapper.prototype._startScan = function(reason) {
@@ -76,7 +76,7 @@
         return;
       }
       this._pendingScan = true;
-      if (this.pageInfo) {
+      if (this._pageInfo) {
         return this._readyAllPages(reason, function() {
           return _this._scanFinished();
         });
@@ -95,7 +95,7 @@
       }
       return PDFView.getPage(1).then(function() {
         console.log("Scanning PDF document for text, because", reason);
-        _this.pageInfo = [];
+        _this._pageInfo = [];
         return _this._extractPDFPageText(0);
       });
     };
@@ -126,7 +126,7 @@
           return _results;
         })()).join(" ");
         content = _this._parseExtractedText(rawContent);
-        _this.pageInfo[pageIndex] = {
+        _this._pageInfo[pageIndex] = {
           content: content
         };
         if (pageIndex === PDFView.pages.length - 1) {
@@ -146,7 +146,7 @@
         div = div.parentNode;
       }
       index = parseInt(div.parentNode.id.substr(13) - 1);
-      return this.pageInfo[index];
+      return this._pageInfo[index];
     };
 
     return PDFTextMapper;

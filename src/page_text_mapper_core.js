@@ -10,7 +10,8 @@
 
     function PageTextMapperCore() {
       this._getMappingsForCharRange = __bind(this._getMappingsForCharRange, this);
-      this._getInfoForNode = __bind(this._getInfoForNode, this);
+      this._getEndInfoForNode = __bind(this._getEndInfoForNode, this);
+      this._getStartInfoForNode = __bind(this._getStartInfoForNode, this);
       this._onPageRendered = __bind(this._onPageRendered, this);
       this._getPageIndexForPos = __bind(this._getPageIndexForPos, this);
       _ref = PageTextMapperCore.__super__.constructor.apply(this, arguments);
@@ -19,19 +20,15 @@
 
     PageTextMapperCore.prototype._getPageIndexForPos = function(pos) {
       var info, _i, _len, _ref1;
-      _ref1 = this.pageInfo;
+      _ref1 = this._pageInfo;
       for (_i = 0, _len = _ref1.length; _i < _len; _i++) {
         info = _ref1[_i];
         if ((info.start <= pos && pos < info.end)) {
           return info.index;
-          this.log("Not on page " + info.index);
+          this._log("Not on page " + info.index);
         }
       }
       return -1;
-    };
-
-    PageTextMapperCore.prototype.getPageRoot = function(index) {
-      return this.getRootNodeForPage(index);
     };
 
     PageTextMapperCore.prototype._onPageRendered = function(index) {
@@ -42,36 +39,36 @@
         }), 1000);
         return;
       }
-      return this._mapPage(this.pageInfo[index], "page has been rendered");
+      return this._mapPage(this._pageInfo[index], "page has been rendered");
     };
 
     PageTextMapperCore.prototype.isPageMapped = function(index) {
       var _ref1;
-      return ((_ref1 = this.pageInfo[index]) != null ? _ref1.domMapper : void 0) != null;
+      return ((_ref1 = this._pageInfo[index]) != null ? _ref1.domMapper : void 0) != null;
     };
 
     PageTextMapperCore.prototype._mapPage = function(info, reason) {
       var _this = this;
-      info.node = this.getRootNodeForPage(info.index);
+      info.node = this.getPageRoot(info.index);
       info.domMapper = new DomTextMapper({
         id: "d-t-m for page #" + info.index,
         rootNode: info.node
       });
-      if (this.requiresSmartStringPadding) {
+      if (this._requiresSmartStringPadding) {
         info.domMapper.setExpectedContent(info.content);
       }
       return info.domMapper.ready(reason, function(s) {
         var renderedContent;
         renderedContent = s.getCorpus();
         if (renderedContent !== info.content) {
-          _this.log("Oops. Mismatch between rendered and extracted text, while mapping page #" + info.index + "!");
+          _this._log("Oops. Mismatch between rendered and extracted text, while mapping page #" + info.index + "!");
           console.trace();
-          _this.log("Rendered: " + renderedContent);
-          _this.log("Extracted: " + info.content);
+          _this._log("Rendered: " + renderedContent);
+          _this._log("Extracted: " + info.content);
         }
         info.node.addEventListener("corpusChange", function() {
-          _this.log("Ooops. Corpus has changed on one of the pages!");
-          return _this.log("TODO: We should do something about this, to update the global corpus!");
+          _this._log("Ooops. Corpus has changed on one of the pages!");
+          return _this._log("TODO: We should do something about this, to update the global corpus!");
         });
         return setTimeout(function() {
           var event;
@@ -89,7 +86,7 @@
       pagesToGo = 0;
       cycleOver = false;
       endTriggered = false;
-      this.pageInfo.forEach(function(info, i) {
+      this._pageInfo.forEach(function(info, i) {
         if (_this._isPageRendered(i)) {
           pagesToGo++;
           return info.domMapper.ready(reason, function() {
@@ -124,16 +121,35 @@
       return window.dispatchEvent(event);
     };
 
-    PageTextMapperCore.prototype._getInfoForNode = function(node) {
+    PageTextMapperCore.prototype._getStartInfoForNode = function(node) {
       var info, k, nodeData, pageData, v;
       pageData = this._getPageForNode(node);
-      nodeData = pageData.domMapper._getInfoForNode(node);
+      nodeData = pageData.domMapper._getStartInfoForNode(node);
+      if (!nodeData) {
+        return null;
+      }
       info = {};
       for (k in nodeData) {
         v = nodeData[k];
         info[k] = v;
       }
       info.start += pageData.start;
+      info.pageIndex = pageData.index;
+      return info;
+    };
+
+    PageTextMapperCore.prototype._getEndInfoForNode = function(node) {
+      var info, k, nodeData, pageData, v;
+      pageData = this._getPageForNode(node);
+      nodeData = pageData.domMapper._getEndInfoForNode(node);
+      if (!nodeData) {
+        return null;
+      }
+      info = {};
+      for (k in nodeData) {
+        v = nodeData[k];
+        info[k] = v;
+      }
       info.end += pageData.start;
       info.pageIndex = pageData.index;
       return info;
@@ -146,7 +162,7 @@
       endIndex = this._getPageIndexForPos(end);
       getSection = function(index) {
         var info, mappings, realEnd, realStart;
-        info = _this.pageInfo[index];
+        info = _this._pageInfo[index];
         realStart = (Math.max(info.start, start)) - info.start;
         realEnd = (Math.min(info.end, end)) - info.start;
         mappings = info.domMapper._getMappingsForCharRange(realStart, realEnd);
@@ -172,7 +188,7 @@
         _this = this;
       this._corpus = ((function() {
         var _i, _len, _ref1, _results;
-        _ref1 = this.pageInfo;
+        _ref1 = this._pageInfo;
         _results = [];
         for (_i = 0, _len = _ref1.length; _i < _len; _i++) {
           info = _ref1[_i];
@@ -181,7 +197,7 @@
         return _results;
       }).call(this)).join(" ");
       pos = 0;
-      return this.pageInfo.forEach(function(info, i) {
+      return this._pageInfo.forEach(function(info, i) {
         info.index = i;
         info.len = info.content.length;
         info.start = pos;
@@ -191,7 +207,7 @@
 
     PageTextMapperCore.prototype._onAfterTextExtraction = function() {
       var _this = this;
-      return this.pageInfo.forEach(function(info, i) {
+      return this._pageInfo.forEach(function(info, i) {
         if (_this._isPageRendered(i)) {
           return _this._mapPage(info, "text extraction finished");
         }
@@ -200,7 +216,7 @@
 
     PageTextMapperCore.prototype._testAllMappings = function() {
       var _this = this;
-      return this.pageInfo.forEach(function(info, i) {
+      return this._pageInfo.forEach(function(info, i) {
         var _ref1;
         return (_ref1 = info.domMapper) != null ? typeof _ref1._testAllMappings === "function" ? _ref1._testAllMappings() : void 0 : void 0;
       });

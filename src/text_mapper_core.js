@@ -18,13 +18,12 @@
     TextMapperCore.prototype._createSyncAPI = function() {
       var _this = this;
       return this._syncAPI = {
-        getInfoForNode: this._getInfoForNode,
+        getStartInfoForNode: this._getStartInfoForNode,
+        getEndInfoForNode: this._getEndInfoForNode,
         getDocLength: function() {
-          _this._startScan("getDocLength()");
           return _this._corpus.length;
         },
         getCorpus: function() {
-          _this._startScan("getCorpus()");
           return _this._corpus;
         },
         getContextForCharRange: this._getContextForCharRange,
@@ -63,7 +62,6 @@
 
     TextMapperCore.prototype._getContextForCharRange = function(start, end) {
       var prefix, prefixStart, suffix;
-      this._startScan("getContextForCharRange()");
       if (start < 0) {
         throw Error("Negative range start (", start, ") is invalid!");
       }
@@ -86,7 +84,11 @@
       return _results;
     };
 
-    TextMapperCore.prototype._getInfoForNode = function() {
+    TextMapperCore.prototype._getStartPosForNode = function() {
+      throw new Error("not implemented");
+    };
+
+    TextMapperCore.prototype._getEndPosForNode = function() {
       throw new Error("not implemented");
     };
 

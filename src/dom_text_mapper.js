@@ -240,7 +240,7 @@
     };
 
     DomTextMapper.prototype._getFreshCorpus = function(shouldRestoreSelection, intermittent) {
-      var ignorePos, index, newCorpus;
+      var newCorpus;
       if (shouldRestoreSelection == null) {
         shouldRestoreSelection = true;
       }
@@ -251,19 +251,13 @@
       if (intermittent) {
         return newCorpus;
       }
-      ignorePos = this._findFirstIgnoredPosition();
-      if (ignorePos != null) {
-        newCorpus = newCorpus.slice(0, ignorePos);
+      if (this._isDirty()) {
+        this._ignorePos = this._findFirstIgnoredPosition();
       }
-      newCorpus = newCorpus.trim();
-      if ((this._corpus != null) && (this._corpus !== newCorpus)) {
-        this.log("Uh-oh. Has the corpus changed?");
-        this.log("Diff @", index = this._getDiffIndex(this._corpus, newCorpus));
-        this.log("Old version (", this._corpus.length, "chars):", this._corpus.substr(index - 10, 20));
-        this.log("New version (", newCorpus.length, "chars):", newCorpus.substr(index - 10, 20));
+      if (this._ignorePos != null) {
+        newCorpus = newCorpus.slice(0, this._ignorePos);
       }
-      this._corpus = newCorpus;
-      return this._corpus;
+      return this._corpus = newCorpus.trim();
     };
 
     DomTextMapper.prototype._findFirstTextNode = function(node) {
@@ -771,14 +765,23 @@
       this._saveSelection();
       this._ignorePos = this._findFirstIgnoredPositionInNode(this.pathStartNode);
       this._restoreSelection();
+      delete this._dirty;
       return this._ignorePos;
     };
 
+    DomTextMapper.prototype._isDirty = function() {
+      var x;
+      x = this._observer.takeSummaries();
+      return (x != null) || this._dirty;
+    };
+
     DomTextMapper.prototype._onMutation = function(summaries) {
-      var corpusChanged,
+      var oldCorpus,
         _this = this;
-      corpusChanged = false;
-      if (corpusChanged) {
+      this._dirty = true;
+      oldCorpus = this._corpus;
+      this._getFreshCorpus();
+      if (this._corpus !== oldCorpus) {
         return setTimeout(function() {
           var event;
           event = document.createEvent("UIEvents");
@@ -789,6 +792,19 @@
     };
 
     DomTextMapper.prototype._changeRootNode = function(node) {
+      var _ref;
+      if ((_ref = this._observer) != null) {
+        _ref.disconnect();
+      }
+      this._observer = new MutationSummary({
+        callback: this._onMutation,
+        rootNode: node,
+        queries: [
+          {
+            all: true
+          }
+        ]
+      });
       return this.rootNode = node;
     };
 

@@ -307,53 +307,40 @@ class window.DomTextMapper extends TextMapperCore
     result
 
 
-  # Calculates the starting position of a given node
-  _getStartInfoForNode: (node, shouldRestoreSelection = true) =>
-    startText = @_findFirstTextNode node    # Get the first text node
-    return null unless startText            # Return if there is no text node
-    origText = startText.nodeValue          # Save the original text
+  # Helper function for position calculating
+  _calculatePositionIndex(node, startInfo, shouldRestoreSelection = true) =>
+    if startInfo then text = @_findFirstTextNode node    # Get the first text node
+    else text = @_findLastTextNode node       # Get the last text node
+    return null unless text            # Return if there is no text node
+    origText = text.nodeValue          # Save the original text
     return null unless origText.length      # Return if it's empty
     @_saveSelection() if shouldRestoreSelection # Save the original selection
     origCorpus = @_getFreshCorpus false, true # Save the original corpus
-    origChar = origText[0]                  # Get the first character
+    origChar = if startInfo then origText[0] else origText[origText.length-1] # Get the original character
     changedChar = if origChar is "." then "," else "." # Choose a replacement
-    changedText = changedChar + origText.substring(1) # Calculate new text
-    startText.nodeValue = changedText       # Actually change the text
+    if startInfo then changedText = changedChar + origText.substring(1) # Calculate new text
+    else changedText = origText.substr(0, origText.length - 1) + changedChar
+    text.nodeValue = changedText   # Actually change the text
     changedCorpus = @_getFreshCorpus false, true  # Check the current corpus
     index = @_getDiffIndex origCorpus, changedCorpus # Find the difference
-    startText.nodeValue = origText          # Restore the original content
+    text.nodeValue = origText          # Restore the original content
     @_restoreSelection() if shouldRestoreSelection # Restore the selection
 
     return null if index is -1              # No difference -> this is hidden
 
     # The final result is the position of the difference in corpus
-    page: 0
-    start: index
+    res =
+      page: 0
+    if startInfo then res.start = index else res.end = index + 1
+    res
 
   # Calculates the starting position of a given node
-  _getEndInfoForNode: (node, shouldRestoreSelection = true) =>
-    endText = @_findLastTextNode node       # Get the last text node
-    return null unless endText              # Return if there is no text node
-    origText = endText.nodeValue            # Save the original text
-    return null unless origText.length      # Return if it's empty
-    @_saveSelection() if shouldRestoreSelection # Save the original selection
-    origCorpus = @_getFreshCorpus false, true # Save the original corpus
-    origChar = origText[origText.length-1]  # Get the first character
-    changedChar = if origChar is "." then "," else "." # Choose a replacement
-    # Calculate new text
-    changedText = origText.substr(0, origText.length - 1) + changedChar
-    endText.nodeValue = changedText         # Actually change the text
-    changedCorpus = @_getFreshCorpus false, true  # Check the current corpus
-    index = @_getDiffIndex origCorpus, changedCorpus # Find the difference
-    endText.nodeValue = origText            # Restore the original content
-    @_restoreSelection() if shouldRestoreSelection # Restore the selection
+  _getStartInfoForNode: (node, shouldRestoreSelection) =>
+    _calculatePositionIndex node, true, shouldRestoreSelection
 
-    return null if index is -1              # No difference -> this is hidden
-
-    # The final result is after the position of the difference in corpus
-    page: 0
-    end: index + 1
-
+  # Calculates the ending position of a given node
+  _getEndInfoForNode: (node, shouldRestoreSelection) =>
+    _calculatePositionIndex node, false, shouldRestoreSelection
 
   _collectAllTextNodes: (node = null, results = []) ->
     node ?= @_pathStartNode

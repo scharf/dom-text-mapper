@@ -308,18 +308,22 @@ class window.DomTextMapper extends TextMapperCore
 
 
   # Helper function for position calculating
-  _calculatePositionIndex(node, startInfo, shouldRestoreSelection = true) =>
-    if startInfo then text = @_findFirstTextNode node    # Get the first text node
-    else text = @_findLastTextNode node       # Get the last text node
+  _calculatePositionIndex(node, isStart, shouldRestoreSelection = true) =>
+    text = if isStart
+      @_findFirstTextNode node    # Get the first text node
+    else
+      @_findLastTextNode node       # Get the last text node
     return null unless text            # Return if there is no text node
     origText = text.nodeValue          # Save the original text
     return null unless origText.length      # Return if it's empty
     @_saveSelection() if shouldRestoreSelection # Save the original selection
     origCorpus = @_getFreshCorpus false, true # Save the original corpus
-    origChar = if startInfo then origText[0] else origText[origText.length-1] # Get the original character
+    origChar = if isStart then origText[0] else origText[origText.length-1] # Get the original character
     changedChar = if origChar is "." then "," else "." # Choose a replacement
-    if startInfo then changedText = changedChar + origText.substring(1) # Calculate new text
-    else changedText = origText.substr(0, origText.length - 1) + changedChar
+    changedText = if isStart
+      changedChar + origText.substring(1) # Calculate new text
+    else
+      origText.substr(0, origText.length - 1) + changedChar
     text.nodeValue = changedText   # Actually change the text
     changedCorpus = @_getFreshCorpus false, true  # Check the current corpus
     index = @_getDiffIndex origCorpus, changedCorpus # Find the difference
@@ -331,7 +335,7 @@ class window.DomTextMapper extends TextMapperCore
     # The final result is the position of the difference in corpus
     res =
       page: 0
-    if startInfo then res.start = index else res.end = index + 1
+    if isStart then res.start = index else res.end = index + 1
     res
 
   # Calculates the starting position of a given node

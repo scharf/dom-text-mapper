@@ -527,11 +527,11 @@ class window.DomTextMapper extends TextMapperCore
 
     # the HTML source of the text inside a text element.
 #    @_log "Calculating source position at " + match.element.path
-    sourceText = match.element.node.data.replace /\n/g, " "
-#    @_log "sourceText is '" + sourceText + "'"
+    sourceText = match.element.node.data.replace /[\s\xA0]/g, " "
+#    @log "sourceText is '" + sourceText + "'"
 
     # what gets displayed, when the node is processed by the browser.
-    displayText = match.element.content
+    displayText = match.element.content.replace /[\s\xA0]/g, " "
 #    @_log "displayText is '" + displayText + "'"
 
     if displayText.length > sourceText.length
